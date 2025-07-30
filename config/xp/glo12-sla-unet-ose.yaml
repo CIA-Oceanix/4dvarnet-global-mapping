@@ -1,0 +1,99 @@
+# @package _global_
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${xpname}-${now:%H-%M-%S}
+  callbacks:
+    LogJobReturnCallback:
+      _target_: hydra.experimental.callbacks.LogJobReturnCallback
+
+domain: ???
+ckpt: null
+xpname: glo12-sla-unet-ose
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  inference_mode: false
+  deterministic: true
+  gradient_clip_val: 0.5
+  accelerator: gpu
+  devices: 1
+  logger:
+    _target_: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+    save_dir: ${hydra:runtime.output_dir}
+    name: ${hydra:runtime.choices.xp}
+    version: ''
+  max_epochs: 1000
+  limit_train_batches: 100  # 640
+  # accumulate_grad_batches: 8
+  callbacks:
+    - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+      monitor: val_mse
+      save_last: true
+      save_top_k: 3
+      filename: '{val_mse:.5f}-{epoch:03d}'
+
+datamodule:
+  _target_: contrib.ose.data.OSEDataModule
+  input_da:
+    _target_: contrib.ose.data.load_ose_data_on_fly
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2018-11-30']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2019-01-01', '2019-12-31']}
+    test: null
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, lat: 680, lon: 1440}
+      strides: {time: 1, lat: 672, lon: 1432}
+      domain_limits: ${domain.train}
+    val:
+      patch_dims: {time: 15, lat: 680, lon: 1440}
+      strides: {time: 1, lat: 672, lon: 1432}
+      domain_limits: ${domain.train}
+  dl_kw: {batch_size: 1, num_workers: 2}
+  norm_stats:  # FIX: to be change for real values ?
+    train:
+    - -0.001930378327255099
+    - 0.08604745118775728
+    val:
+    - -0.001930378327255099
+    - 0.08604745118775728
+
+model:
+  _target_: contrib.unet.models.Unet
+  solver:
+    _target_: contrib.unet.models.UnetSolver
+    _partial_: True
+    dim_in: ${datamodule.xrds_kw.train.patch_dims.time}
+  channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+  opt_fn:
+    _target_: contrib.unet.utils.cosanneal_lr_adam
+    _partial_: true
+    lr: 1e-4
+    T_max: ${trainer.max_epochs}
+  rec_weight:
+    _target_: ocean4dvarnet.utils.get_triang_time_wei
+    patch_dims: ${datamodule.xrds_kw.train.patch_dims}
+    crop: {time: 0, lat: 4, lon: 4}
+  pre_metric_fn:
+        _target_: xarray.Dataset.sel
+        _partial_: True
+        time: {_target_: builtins.slice, _args_: ["2019-11-25", "2019-12-31"]}
+        lat: ${domain.test.lat}
+        lon: ${domain.test.lon}
+  norm_stats: ${datamodule.norm_stats}
+
+entrypoints:
+  - _target_: pytorch_lightning.seed_everything
+    seed: 333
+  - _target_: ocean4dvarnet.train.base_training
+    trainer: ${trainer}
+    lit_mod: ${model}
+    dm: ${datamodule}
+
+defaults:
+  - /domain: glorys
+  - _self_
