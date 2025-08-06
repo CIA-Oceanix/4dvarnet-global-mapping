@@ -25,6 +25,98 @@ class NormParamsNotProvided(Exception):
 # Data
 # ----
 
+def generate_correlated_fields_np(N, M, L, T_corr, sigma, num_fields=10):
+    """
+    Generate a series of 2D fields with both spatial and temporal correlations.
+
+    Parameters:
+        N (int): Grid size (assumed to be square, NxN).
+        L (float): Spatial correlation length.
+        T_corr (float): Temporal correlation length.
+        sigma (float): Standard deviation of the field.
+        num_fields (int): Number of fields to generate (default is 10).
+        device (str): Device to run the computations on ('cpu' or 'cuda').
+
+    Returns:
+        torch.Tensor: Generated fields of shape (num_fields, N, N).
+    """
+    # Define the time points for the fields
+    time_points = np.linspace(0, num_fields - 1, num_fields)
+
+    # Compute the temporal covariance matrix
+    C_temporal = np.exp(-abs(time_points[:, None] - time_points[None, :]) / T_corr)
+
+    # Perform Cholesky decomposition to get the temporal correlation factors
+    L_chol = np.linalg.cholesky(C_temporal)
+
+    # Generate independent Gaussian white noise for each time point
+    white_noises = np.random.randn(num_fields, N, M )
+
+    # Combine white noise using the Cholesky factors to induce temporal correlation
+    temporal_correlated_noises = np.matmul(L_chol, white_noises.reshape(num_fields, -1)).reshape(num_fields, N, M)
+
+    # Generate 2D grid of wavenumbers for spatial correlation
+    kx = np.fft.fftfreq(N) * N
+    ky = np.fft.fftfreq(M) * M
+    k = np.sqrt(kx[:, None]**2 + ky[None, :]**2)
+    cutoff_mask = (k < 20)  # High-frequency cutoff
+    # apply - if we apply the same approach to vorticity, and then obtain 
+    # stream function, 
+    # Spatial covariance (Power spectrum) for Gaussian covariance
+    P_k = np.exp(-0.5 * (k * L)**3)
+    P_k[0, 0] = 0.0
+    P_k = P_k / np.sum(P_k)
+
+    # Generate fields using Fourier transform
+    fields = []
+    for i in range(num_fields):
+        noise_ft = np.fft.fft2(temporal_correlated_noises[i])
+
+        field_ft = noise_ft * sigma**2 * np.sqrt(P_k) * cutoff_mask
+        field = np.fft.ifft2(field_ft).real
+        fields.append(field)
+    return np.stack(fields)
+
+def warp_field_np(field, dx, dy):
+    """
+    Warp a 2D field based on displacement fields dx and dy.
+    field (torch.Tensor): Input field of shape (batch_size, channels, height, width)
+    dx (torch.Tensor): X-displacement field of shape (batch_size, height, width)
+    dy (torch.Tensor): Y-displacement field of shape (batch_size, height, width)
+    """
+    height, width = field.shape
+    
+    # Create base grid
+    xref = np.arange(width) 
+    yref = np.arange(height)
+
+    yg, xg  = np.meshgrid(yref, xref, indexing='ij')
+    #base_grid = np.stack((x, y), dim=-1).float()
+ 
+    # Add batch dimension and move to the same device as input field
+    #base_grid = base_grid.unsqueeze(0).repeat(batch_size,1,1,1).to(field.device)
+
+    # Apply displacements
+    x = ( xg + dx )
+    y = ( yg + dy )
+
+    x [ x < 0. ] = 0.
+    y [ y < 0. ] = 0.
+
+    x [ x > width-1 ]  = width - 1.
+    y [ y > height-1 ] = height - 1.
+
+
+     # Normalize grid to [-1, 1] range
+    #sample_grid[..., 0] = 2 * sample_grid[..., 0] / (width) - 1
+    #sample_grid[..., 1] = 2 * sample_grid[..., 1] / (height) - 1
+
+    # Perform sampling
+    #warped_field = F.grid_sample(field, sample_grid, mode='bilinear', padding_mode='reflection', align_corners=False)
+    interp = RegularGridInterpolator((yref, xref), field , method="cubic")
+    warped_field = interp( (y , x ) )
+    #warped_field = warped_field.reshape( x.shape )
+    return warped_field
 
 class DistinctNormDataModule(BaseDataModule):
     def __init__(self, *args, **kwargs):
@@ -197,8 +289,38 @@ class LazyXrDataset(torch.utils.data.Dataset):
 
                 item[0] = item[0] + scale * noise
             elif self.noise_type ==  'spatial-perturb' :
-                # not yet coded
-                item[0] = item[0]
+                # patch dimensions
+                N = item[0].shape[1]
+                M = item[0].shape[2]
+                T = item[0].shape[0]
+
+                # parameters of the Gaussian Process
+                L = 5.0  # Spatial correlation length
+                T_corr = 20.0  # Temporal correlation length
+                sigma = self.noise_spatial  # Standard deviation of the field
+
+                # generate space-time random perturbations
+                w  = np.matmul( np.hanning( N ).reshape(N,1) , np.hanning( M ).reshape(1,M) )
+                dx = w * generate_correlated_fields_np(N, M, L, T_corr, sigma,T)
+                dy = w * generate_correlated_fields_np(N, M, L, T_corr, sigma,T)
+
+                # compute warped fields from reference field and associated error map
+                warped_field = np.zeros_like(field)
+
+                # Perform warping
+                for ii in range(T):
+                    warped_field[ii,:,:] = warp_field_np(item[1][ii,:,:], dx[ii,:,:], dy[ii,:,:])
+                error = item[1][ii,:,:] - warped_field
+
+                # apply mask
+                noise = np.where( np.isnan(item[0]) , np.nan, error )
+                print("..... std of the simulated noise : %.3f"%np.nanstd(noise) )
+                
+                # adding a white noise
+                scale  = self._rng.uniform(0. , self.noise, 1).astype(np.float32)
+                wnoise = scale * self._rng.normal(0., 1. , item[0].shape).astype(np.float32)
+
+                item[0] = item[0] + noise + wnoise
 
         if self.postpro_fn is not None:
             return self.postpro_fn(item)
