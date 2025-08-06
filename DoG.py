@@ -11,25 +11,17 @@ def dog_kornia(x, sigma, l3_mask):
     x = torch.nan_to_num(x, nan=0.0)
     #x_masked = x * l3_mask
     mask_bool = l3_mask.bool()
-
-    data_filtered = torch.where(mask_bool, kornia.filters.gaussian_blur2d(x, (k, k), (sigma, sigma), separable = False), torch.nan)
     mask_filtered = torch.where(mask_bool, kornia.filters.gaussian_blur2d(l3_mask, (k, k), (sigma, sigma), separable = False), torch.nan)
-    
-    data_filtered_normalized = data_filtered / (mask_filtered + 1e-6)
-        
-    return data_filtered_normalized
 
-def consecutive_filtering_kornia(x, sigma=1.0, K = 2, l3_mask = []):
-    g = [dog_kornia(x, sigma, l3_mask)]
-    for k in range(1, K):
-        g.append(dog_kornia(g[k - 1], sigma, l3_mask))
-    return g
+    data_filtered_normalized = []
+    for i in range(K):
+        data_filtered_normalized.append(torch.where(mask_bool, kornia.filters.gaussian_blur2d(x, (k, k), (sigma, sigma), separable = False), torch.nan) / (mask_filtered + 1e-6))
+            
+    return torch.diff(torch.stack(data_filtered_normalized, 0).squeeze(), dim = 0)
 
 
 tgt = xr.open_dataset('/Odyssey/public/altimetry_traces/2010_2023/gridded/gridded_input.nc').sla_filtered
 l3_mask = tgt.notnull().astype('float32').values
 
 time_idx = 350
-filtered_data_kornia = consecutive_filtering_kornia(torch.Tensor(tgt[time_idx].values).unsqueeze(0).unsqueeze(0), 2.5, 4, torch.Tensor(l3_mask[time_idx]).unsqueeze(0).unsqueeze(0))
-
-DoG_kornia = torch.diff(torch.stack(filtered_data_kornia, 0).squeeze(), dim = 0)
+DoG_Nadir = dog_kornia(torch.Tensor(tgt[time_idx].values).unsqueeze(0).unsqueeze(0), 2.5, 4, torch.Tensor(l3_mask[time_idx]).unsqueeze(0).unsqueeze(0))
