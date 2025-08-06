@@ -1,6 +1,5 @@
 import torch
 import xarray as xr
-import kornia
 
 def dog_kornia(x, sigma, l3_mask):
     B, C, H, W = x.shape
@@ -11,7 +10,7 @@ def dog_kornia(x, sigma, l3_mask):
     x = torch.nan_to_num(x, nan=0.0)
     #x_masked = x * l3_mask
     mask_bool = l3_mask.bool()
-    mask_filtered = torch.where(mask_bool, kornia.filters.gaussian_blur2d(l3_mask, (k, k), (sigma, sigma), separable = False), torch.nan)
+    mask_filtered = torch.where(mask_bool, kfilts.gaussian_blur2d(l3_mask, (k, k), (sigma, sigma), separable = False), torch.nan)
 
     data_filtered_normalized = []
     for i in range(K):
