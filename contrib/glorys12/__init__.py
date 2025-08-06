@@ -87,6 +87,7 @@ class LazyXrDataset(torch.utils.data.Dataset):
         domain_limits=None,
         strides=None,
         postpro_fn=None,
+        noise_type=None,
         noise=None,
         *args,
         **kwargs,
@@ -110,6 +111,12 @@ class LazyXrDataset(torch.utils.data.Dataset):
         }
         self._rng = np.random.default_rng()
         self.noise = noise
+
+        if noise_type is not None:
+            self.noise_type = noise_type
+        else:
+            self.noise_type = 'uniform-constant'
+
         # self.mask = kwargs.get("mask")
         self.mask = None
 
@@ -177,14 +184,26 @@ class LazyXrDataset(torch.utils.data.Dataset):
             return item.coords.to_dataset()[list(self.patch_dims)]
 
         item = item.data.astype(np.float32)
+
         if self.noise is not None:
-            noise = np.tile(
-                self._rng.uniform(-self.noise, self.noise, item[0].shape), (2, 1, 1, 1)
-            ).astype(np.float32)
-            item = item + noise
+
+            if self.noise_type ==  'uniform-constant' :
+                noise =  self._rng.uniform(-self.noise, self.noise, item[0].shape).astype(np.float32)
+
+                item[0] = item[0] + noise
+            elif self.noise_type ==  'gaussian+uniform' :
+                scale = self._rng.uniform(0. , self.noise, 1).astype(np.float32)
+                noise =  self._rng.normal(0., 1. , item[0].shape).astype(np.float32)
+
+                item[0] = item[0] + scale * noise
+            elif self.noise_type ==  'spatial-perturb' :
+                # not yet coded
+                item[0] = item[0]
+
         if self.postpro_fn is not None:
             return self.postpro_fn(item)
         return item
+
 
 
 # Model
