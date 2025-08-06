@@ -16,23 +16,7 @@ def dog_kornia(x, sigma, l3_mask):
     mask_filtered = torch.where(mask_bool, kornia.filters.gaussian_blur2d(l3_mask, (k, k), (sigma, sigma), separable = False), torch.nan)
     
     data_filtered_normalized = data_filtered / (mask_filtered + 1e-6)
-    
-    kernel = kornia.filters.get_gaussian_kernel2d((k, k), (sigma, sigma)) 
-    
-    %matplotlib inline
-    vmin, vmax = -0.01, 0.01
-    fig, ax = plt.subplots(1, 3, figsize = (30, 30))
-    ax[0].imshow(kernel[0])
-    ax[0].set_title('Gaussian filter')
-    
-    data = x[0, 0]
-    ax[1].imshow(data[250:350, 250:350], cmap = "coolwarm", vmin = vmin, vmax = vmax)
-    ax[1].set_title('Input')
-    
-    ax[2].imshow(data_filtered_normalized[0, 0][250:350, 250:350], cmap = "coolwarm",  vmin = vmin, vmax = vmax)
-    ax[2].set_title('Filtered masked normalized output')
-    plt.show()
-
+        
     return data_filtered_normalized
 
 def consecutive_filtering_kornia(x, sigma=1.0, K = 2, l3_mask = []):
