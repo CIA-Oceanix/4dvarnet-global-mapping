@@ -18,10 +18,3 @@ def dog_kornia(x, sigma, l3_mask):
         data_filtered_normalized.append(torch.where(mask_bool, kornia.filters.gaussian_blur2d(x, (k, k), (sigma, sigma), separable = False), torch.nan) / (mask_filtered + 1e-6))
             
     return torch.diff(torch.stack(data_filtered_normalized, 0).squeeze(), dim = 0)
-
-
-tgt = xr.open_dataset('/Odyssey/public/altimetry_traces/2010_2023/gridded/gridded_input.nc').sla_filtered
-l3_mask = tgt.notnull().astype('float32').values
-
-time_idx = 350
-DoG_Nadir = dog_kornia(torch.Tensor(tgt[time_idx].values).unsqueeze(0).unsqueeze(0), 2.5, 4, torch.Tensor(l3_mask[time_idx]).unsqueeze(0).unsqueeze(0))
