@@ -1,0 +1,8 @@
+trainer:
+  check_val_every_n_epoch: 5
+
+domain:
+
+defaults:
+  - glo12-sla-4dvarnet_latent
+  - _self_

@@ -5,8 +5,8 @@ xpname: glo12-sla-8th-unet
 datamodule:
   input_da:
     _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
-    tgt_path: /SCRATCH/h21georg/glorys12_2010_2019_daily_sla_8th_float32.nc
-    inp_path: /SCRATCH/h21georg/glorys12_2010_2019_daily_sla_8th_input.nc
+    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_8th_float32.nc
+    inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_8th_input.nc
   xrds_kw:
     train:
       path_dims: {time: 15, lat: 96, lon: 96}
