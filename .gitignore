@@ -1,0 +1,4 @@
+*.log      # log files
+*.out.* # output files
+*__pycache__*
+*.pyc # pycache files

@@ -324,6 +324,8 @@ class LazyXrDataset(torch.utils.data.Dataset):
 
                 item[0] = item[0] + noise + wnoise
 
+        print(item.shape)
+
         if self.postpro_fn is not None:
             return self.postpro_fn(item)
         return item
