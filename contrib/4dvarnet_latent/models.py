@@ -19,8 +19,6 @@ class LatentDecoderMR(torch.nn.Module):
         self.scale_factor = scale_factor
         self.interp_mode  = interp_mode
 
-        self.conv1 = torch.nn.
-
         self.decode_residual = torch.nn.Sequential(
             torch.nn.Conv2d(
                 in_channels=dim_state+dim_latent,
