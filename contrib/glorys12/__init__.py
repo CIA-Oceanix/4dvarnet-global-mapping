@@ -297,7 +297,7 @@ class LazyXrDataset(torch.utils.data.Dataset):
                 # parameters of the Gaussian Process
                 L = 5.0  # Spatial correlation length
                 T_corr = 20.0  # Temporal correlation length
-                sigma = self.noise_spatial  # Standard deviation of the field
+                sigma  = self._rng.uniform(0. , self.noise_spatial_perturb, 1).astype(np.float32)
 
                 # generate space-time random perturbations
                 w  = np.matmul( np.hanning( N ).reshape(N,1) , np.hanning( M ).reshape(1,M) )
@@ -310,6 +310,8 @@ class LazyXrDataset(torch.utils.data.Dataset):
                 # Perform warping
                 for ii in range(T):
                     warped_field[ii,:,:] = warp_field_np(item[1][ii,:,:], dx[ii,:,:], dy[ii,:,:])
+                
+                # residual error
                 error = item[1][ii,:,:] - warped_field
 
                 # apply mask
