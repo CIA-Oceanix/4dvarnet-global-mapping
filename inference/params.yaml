@@ -2,16 +2,32 @@ method:
   # -------------------------------------------------------------------
   # SLA
   # -------------------------------------------------------------------
-  name: fdvarnet-glo12-sla
-  checkpoint: <chemin_vers_checkpoints>
-  config: ../config/xp/inference-glo12-sla.yaml
-
-  input_data: data/global_sla_0.25.nc
-  input_var: sla_filtered
-  output_var: sla
   geo_uv: false
+#  name: unet-4th-glo12-sla
+#  checkpoint: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/glo12-sla-4th-unet/checkpoints/best.ckpt
+#  config: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/.hydra/config.yaml
 
-dims:
-  patch: 15-648-1488
-  stride: 1-200-200
-  res: .25
+#  name: unet-4th-glo12-sla-with-init
+#  checkpoint: ../outputs/2025-08-12/glo12-sla-4th-unet-with-init-12-52-56/glo12-sla-4th-unet-with-init/checkpoints/best.ckpt
+#  config: ../outputs/2025-08-12/glo12-sla-4th-unet-with-init-12-52-56/.hydra/config.yaml
+
+#  name: unet-noise2-4th-glo12-sla-best2
+#  checkpoint: ../outputs/2025-08-12/glo12-sla-4th-unet-noise2-19-24-46/glo12-sla-4th-unet/checkpoints/best.ckpt
+#  config: ../outputs/2025-08-12/glo12-sla-4th-unet-noise2-19-24-46/.hydra/config.yaml
+
+#  name: unet-noise2-gloss+-4th-glo12-sla-last2
+#  checkpoint: ../outputs/2025-08-12/glo12-sla-4th-unet-noise2-gloss+-22-09-12/glo12-sla-4th-unet/checkpoints/last.ckpt
+#  config: ../outputs/2025-08-12/glo12-sla-4th-unet-noise2-gloss+-22-09-12/.hydra/config.yaml
+
+#  name: unet-noise2-8th-glo12-sla-best
+#  checkpoint: ../outputs/2025-08-13/glo12-sla-8th-unet-14-57-16/glo12-sla-8th-unet/checkpoints/best.ckpt
+#  config: ../outputs/2025-08-13/glo12-sla-8th-unet-14-57-16/.hydra/config.yaml
+
+#  name: unet-noise2-8th-glo12-sla-2-best
+#  checkpoint: ../outputs/2025-08-13/glo12-sla-8th-unet-11-57-45/glo12-sla-8th-unet/checkpoints/best.ckpt
+#  config: ../outputs/2025-08-13/glo12-sla-8th-unet-11-57-45/.hydra/config.yaml
+
+  name: unet-wlonlat-noise+-8th-glo12-sla-last
+  checkpoint: ../outputs/2025-08-13/glo12-sla-8th-unet-wlonlat-noise+-20-11-34/glo12-sla-8th-unet-wlonlat/checkpoints/last.ckpt
+  config: ../outputs/2025-08-13/glo12-sla-8th-unet-wlonlat-noise+-20-11-34/.hydra/config.yaml
+#CHECK dvc.yaml for the considered resolution

@@ -2,3 +2,10 @@
 *.out.* # output files
 *__pycache__*
 *.pyc # pycache files
+outputs/*
+results/*
+saved_models/*
+logs/*
+*.nc
+.dvc/*
+.dvcignore

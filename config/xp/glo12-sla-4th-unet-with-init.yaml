@@ -1,0 +1,17 @@
+# @package _global_
+xpname: glo12-sla-4th-unet-with-init
+
+ckpt: ./outputs/2025-08-12/glo12-sla-4th-unet-with-init-09-50-30/glo12-sla-4th-unet-with-init/checkpoints/last.ckpt #null #
+
+model:
+  _target_: contrib.4dvarnet_latent.models.LitUnetFromLit4dVarNetWithInit
+  init_state: mean-lr
+  scale_init_state: 4
+  solver:
+    _target_: contrib.4dvarnet_latent.models.UnetSolver #ocean4dvarnet.models.GradSolver
+    dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}
+    channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+
+defaults:
+  - glo12-sla-4th-unet
+  - _self_

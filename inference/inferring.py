@@ -18,7 +18,7 @@ _FDVPATH = ".." # chemin vers installation 4DVarNet contenant contrib glorys
 if _FDVPATH not in sys.path:
     sys.path.append(_FDVPATH)
 
-PredictItem = namedtuple("PredictItem", ("input",))
+PredictItem = namedtuple("PredictItem", ("input","lon","lat"))
 _G = 9.81
 _OMEGA = 7.2921e-5
 _LAT_TO_RAD = np.pi / 180.0
@@ -49,10 +49,28 @@ class LitModel(pl.LightningModule):
     def predict_step(self, batch, batch_idx: int, *args, **kwargs):
         if batch_idx == 0:
             self.predict_data = []
+
         outputs = self.solver(batch)
+
+        if False :
+            # re-apply model with new normalization parameters
+            mask  = 1.0 - torch.isnan( batch.input ).float()
+            m_out = torch.mean( outputs * mask ) / torch.mean( mask )
+            s_out = torch.sqrt( torch.mean( (outputs - m_out) **2 * mask ) / torch.mean( mask ) )
+
+            batch_ = PredictItem( ( batch.input - m_out ) / s_out )
+
+            outputs = self.solver(batch_)
+            outputs = outputs * s_out + m_out
+
+
+            m_out = torch.mean( outputs * mask ) / torch.mean( mask )
+            s_out = torch.sqrt( torch.mean( (outputs - m_out) **2 * mask ) / torch.mean( mask ) )
 
         self.bs = self.bs or outputs.shape[0]
         m, s = self.norm_stats
+
+
 
         outputs = outputs.cpu().numpy() * s + m
 
@@ -137,7 +155,8 @@ class LitModel(pl.LightningModule):
             final_reconstruction = final_reconstruction.sortby("longitude")
 
             mdt = (
-                xr.open_dataset("data/MDT_DUACS_0.25deg.nc")
+                #xr.open_dataset("data/MDT_DUACS_0.25deg.nc")
+                xr.open_dataset("/Odyssey/public/duacs/2019/from-datachallenge-global-ose-2023/MDT_DUACS_0.25deg.nc")
                 .sel(
                     latitude=slice(
                         final_reconstruction.latitude[0],
@@ -210,7 +229,9 @@ class XrDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         item = self.patcher[idx].load()
+        
         item = toolz.thread_first(item, *self.postpro_fns)
+
         return item
 
     def __len__(self):
@@ -295,7 +316,9 @@ def _run(cfg):
 
     da = xr.open_dataset(cfg["input"])[cfg.get("input_var", "ssh")].sel(sel)
     postpro_fns = (
-        lambda item: PredictItem._make((item.values.astype(np.float32),)),
+        lambda item: PredictItem._make((item.values.astype(np.float32),
+                                        item.coords['lon'].data.astype(np.float32),
+                                        item.coords['lat'].data.astype(np.float32))),
         lambda item: item._replace(input=(item.input - mean) / std),
     )
 

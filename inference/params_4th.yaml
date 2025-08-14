@@ -1,0 +1,11 @@
+exp:
+  name: to4th
+  input_data:  /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/gridded_obs_sla_0.25.nc
+  input_var: sla_filtered
+  output_var: sla
+  mask_path: /Odyssey/public/data_challenge_ssh_ose/data/sad/land_mask_1_4_degree.nc
+
+dims:
+  patch: 15-648-1488
+  stride: 1-200-200
+  res: .25

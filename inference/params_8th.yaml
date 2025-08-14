@@ -1,0 +1,12 @@
+exp:
+  name: to8th
+  input_data:  /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/gridded_obs_sla_0.125.nc
+  input_var: sla_filtered
+  output_var: sla
+  mask_path: /Odyssey/public/data_challenge_ssh_ose/data/sad/land_water_mask_8.nc
+
+
+dims:
+  patch: 15-1296-2976 #15-1296-2880
+  stride: 1-800-800
+  res: .125

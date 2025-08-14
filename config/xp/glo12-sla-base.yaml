@@ -40,7 +40,7 @@ datamodule:
     _target_: contrib.glorys12.load_glorys12_data_on_fly_inp #contrib.glorys12.load_glorys12_data
     tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th.nc #glorys4_2010_2019_sla.nc
     tgt_var: sla
-    inp_path: /SCRATCH/rfablet/Dataset/mask_6nadirs_4th.nc #/Odyssey/public/data_challenge_ssh_ose/data/alongtrack/
+    inp_path: /SCRATCH/rfablet/Dataset/mask_6nadirs_4th.nc
     inp_var: inp
     #inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input.nc #glorys4_2010_2019_input_sla.nc
     #inp_var: sla
@@ -70,6 +70,11 @@ datamodule:
 
 model:
   _target_: contrib.glorys12.Lit4dVarNetIgnoreNaN
+  w_mse: 50.
+  w_grad_mse: 1000.
+  w_mse_lr: 50.
+  w_grad_mse_lr: 1000.
+  w_prior: 1.
   persist_rw: false
   opt_fn:
     _target_: ocean4dvarnet.utils.cosanneal_lr_adam
@@ -84,24 +89,6 @@ model:
     _target_: ocean4dvarnet.utils.get_triang_time_wei
     patch_dims: ${datamodule.xrds_kw.val.patch_dims}
     crop: {time: 0, lat: 4, lon: 4}
-  solver:
-    _target_: ocean4dvarnet.models.GradSolver
-    n_step: 15
-    lr_grad: 1e3
-    # lr_grad: 0.2
-    prior_cost:
-      _target_: ocean4dvarnet.models.BilinAEPriorCost
-      dim_in: ${datamodule.xrds_kw.train.patch_dims.time}
-      dim_hidden: 64
-      bilin_quad: false
-      # bilin_quad: true
-      downsamp: 2
-    obs_cost:
-      _target_: ocean4dvarnet.models.BaseObsCost
-    grad_mod:
-      _target_: ocean4dvarnet.models.ConvLstmGradModel
-      dim_in: ${datamodule.xrds_kw.train.patch_dims.time}
-      dim_hidden: 96
   norm_stats: ${datamodule.norm_stats}
 
 entrypoints:

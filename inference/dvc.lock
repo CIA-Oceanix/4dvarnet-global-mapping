@@ -1,0 +1,10 @@
+schema: '2.0'
+stages:
+  inference:
+    cmd: "python inferring.py +input=/Odyssey/public/data_challenge_ssh_ose/data/alongtrack/gridded_obs_sla_0.125.nc
+      +checkpoint_path=../outputs/2025-08-13/glo12-sla-8th-unet-14-57-16/glo12-sla-8th-unet/checkpoints/best.ckpt
+      +config_path=../outputs/2025-08-13/glo12-sla-8th-unet-14-57-16/.hydra/config.yaml
+      +output_path=./output//unet-noise2-8th-glo12-sla-best-to8th.nc +patch=15-1296-2976
+      +stride=1-800-800 +period_from=2018-12-01 +period_to=2020-01-31 +input_var=sla_filtered
+      +output_var=sla +output_geo_uv=false +output_dc_format=true +batch_size=1 hydra.run.dir=.
+      hydra.output_subdir=null hydra/job_logging=disabled hydra/hydra_logging=disabled\n"

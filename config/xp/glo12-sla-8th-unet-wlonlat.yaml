@@ -1,0 +1,55 @@
+# @package _global_
+xpname: glo12-sla-8th-unet-wlonlat-wgattn-noise
+
+#ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
+ckpt: null
+#ckpt: outputs/2025-08-13/glo12-sla-8th-unet2-wlonlat-noise-18-24-38/glo12-sla-8th-unet-wlonlat/checkpoints//last.ckpt
+#ckpt: outputs/2025-08-13/glo12-sla-8th-unet-wlonlat-noise-23-12-40/glo12-sla-8th-unet-wlonlat/checkpoints/last.ckpt
+
+trainer:
+  check_val_every_n_epoch: 3
+  max_epochs: 350
+  limit_train_batches: 250
+
+datamodule:  
+  _target_: contrib.glorys12.DistinctNormDataModuleWithLonLat #contrib.glorys12.DistinctNormDataModule # #
+  input_da:
+    _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
+    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_8th_float32.nc 
+    inp_path: /SCRATCH/rfablet/Dataset/mask_6nadirs_8th.nc     # from /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/
+    inp_var: inp
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2018-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2019-01-01', '2019-12-31']}
+    test: null
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, lat: 256, lon: 512}
+      strides: {time: 1, lat: 200, lon: 200}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: uniform
+    val:
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 500, lon: 500}
+      #patch_dims: {time: 15, lat: 96, lon: 96}
+      #strides: {time: 1, lat: 88, lon: 88}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: uniform
+  dl_kw: {batch_size: 32, num_workers: 4}
+
+model:
+  solver:
+    _target_: contrib.4dvarnet_latent.models.UnetSolverwithGAttn
+    #_target_: contrib.4dvarnet_latent.models.UnetSolverwithLonLat #ocean4dvarnet.models.GradSolver
+    dim_in: ${datamodule.xrds_kw.train.patch_dims.time}
+    dim_out: ${datamodule.xrds_kw.train.patch_dims.time}
+    dim_inp_attn: 3
+    channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+
+defaults:
+  - glo12-sla-4th-unet-wlonlat.yaml
+  - _self_

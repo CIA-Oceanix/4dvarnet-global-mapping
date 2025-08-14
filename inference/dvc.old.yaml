@@ -1,20 +1,22 @@
 vars:
 - config.yaml:domain,paths
-- params_8th.yaml:exp,dims
+
+params:
+- params2.yaml:method,dims
 
 stages:
   inference:
     cmd: >
       python inferring.py
-      +input=${exp.input_data}
+      +input=${method.input_data}
       +checkpoint_path=${method.checkpoint}
       +config_path=${method.config}
-      +output_path=${paths.output}/${method.name}-${exp.name}.nc
+      +output_path=${paths.output}/${method.name}.nc
       +patch=${dims.patch} +stride=${dims.stride}
       +period_from=${domain.time.0}
       +period_to=${domain.time.1}
-      +input_var=${exp.input_var}
-      +output_var=${exp.output_var}
+      +input_var=${method.input_var}
+      +output_var=${method.output_var}
       +output_geo_uv=${method.geo_uv}
       +output_dc_format=true
       +batch_size=1

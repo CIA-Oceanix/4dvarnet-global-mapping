@@ -1,0 +1,73 @@
+# @package _global_
+xpname: glo12-sla-4th-latent
+
+trainer:
+  check_val_every_n_epoch: 3
+  max_epochs: 350
+  limit_train_batches: 250
+
+datamodule:
+  input_da:
+    _target_: contrib.glorys12.load_glorys12_data
+    #tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th.nc #glorys4_2010_2019_sla.nc
+    #inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input.nc
+    #tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_2018-2019.nc
+    #inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input_2018-2019.nc 
+    inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input.nc 
+    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th.nc
+    inp_var: sla
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2018-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2019-01-01', '2019-12-31']}
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, lat: 256, lon: 256}
+      strides: {time: 1, lat: 240, lon: 240}
+      domain_limits: ${domain.train}
+      noise: .03
+    val:
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 500, lon: 500}
+      domain_limits: ${domain.train}
+      noise: .03
+  dl_kw: {batch_size: 16, num_workers: 4}
+model:
+  _target_: contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaNLatent
+  w_mse: 50.
+  w_grad_mse: 1000.
+  w_mse_lr: 50.
+  w_grad_mse_lr: 1000.
+  w_prior: 1.
+  w_latent_ae: 1.
+  solver:
+    _target_: contrib.4dvarnet_latent.models.GradSolverWithLatent #ocean4dvarnet.models.GradSolver
+    n_step: 15
+    lr_grad: 1e3
+    std_latent_init: 0.1    
+    # lr_grad: 0.2
+    latent_decoder:
+      _target_: contrib.4dvarnet_latent.models.LatentDecoderMR
+      dim_state: ${datamodule.xrds_kw.train.patch_dims.time}
+      dim_latent: 8
+      channel_dims: 16
+      scale_factor: 4
+      interp_mode: 'bilinear'
+    prior_cost:
+      _target_: ocean4dvarnet.models.BilinAEPriorCost
+      dim_in: 23 #${eval:${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}}
+      dim_hidden: 64
+      bilin_quad: false
+      # bilin_quad: true
+      downsamp:  null
+    obs_cost:
+      _target_: ocean4dvarnet.models.BaseObsCost
+    grad_mod:
+      _target_: ocean4dvarnet.models.ConvLstmGradModel #contrib.4dvarnet_latent.models.ConvLstmGradModel #
+      dim_in: ${model.solver.prior_cost.dim_in} #${datamodule.xrds_kw.train.patch_dims.time}
+      dim_hidden: 96
+
+defaults:
+  - glo12-sla-base
+  - _self_
