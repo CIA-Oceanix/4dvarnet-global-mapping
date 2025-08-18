@@ -1,0 +1,46 @@
+# @package _global_
+xpname: ose-sla-4th-unet
+
+ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
+
+datamodule:
+  _target_: contrib.ose.OSEDataModule
+  input_da:
+    _target_: contrib.ose.load_ose_data
+    bool_file_path: /SCRATCH/rfablet/Dataset/ose/da_ose_2010_2019_daily_bool_1deg.nc
+    nadir_dir_path: /SCRATCH/rfablet/Dataset/ose/gridded_0.25deg
+    nadir_fn_pattern: ose_*_daily_sla_0.25deg.nc
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-11-30']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-11-30']}
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, latitude: 128, longitude: 256}
+      strides: {time: 1, latitude: 40, longitude: 40}
+      # domain_limits: ${domain.train}
+    val:
+      patch_dims: {time: 15, latitude: 48, longitude: 48}
+      strides: {time: 1, latitude: 40, longitude: 40}
+      # domain_limits: ${domain.train}
+  dl_kw: {batch_size: 16, num_workers: 12}
+
+model:
+  _target_: contrib.4dvarnet_latent.models.LitUnetFromLit4dVarNetIgnoreNaN
+  w_mse: 50.
+  w_grad_mse: 1000.
+  opt_fn:
+    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
+    _partial_: true
+    lr: 1e-4
+    T_max: ${trainer.max_epochs}
+  solver:
+    _target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
+    dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}
+    channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+
+
+defaults:
+  - glo12-sla-4th-unet
+  - _self_

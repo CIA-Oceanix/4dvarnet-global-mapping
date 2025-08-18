@@ -27,7 +27,33 @@ method:
 #  checkpoint: ../outputs/2025-08-13/glo12-sla-8th-unet-11-57-45/glo12-sla-8th-unet/checkpoints/best.ckpt
 #  config: ../outputs/2025-08-13/glo12-sla-8th-unet-11-57-45/.hydra/config.yaml
 
-  name: unet-wlonlat-noise+-8th-glo12-sla-last
-  checkpoint: ../outputs/2025-08-13/glo12-sla-8th-unet-wlonlat-noise+-20-11-34/glo12-sla-8th-unet-wlonlat/checkpoints/last.ckpt
-  config: ../outputs/2025-08-13/glo12-sla-8th-unet-wlonlat-noise+-20-11-34/.hydra/config.yaml
+#  name: unet-wlonlat-noise+-8th-glo12-sla-last
+#  checkpoint: ../outputs/2025-08-13/glo12-sla-8th-unet-wlonlat-noise+-20-11-34/glo12-sla-8th-unet-wlonlat/checkpoints/last.ckpt
+#  config: ../outputs/2025-08-13/glo12-sla-8th-unet-wlonlat-noise+-20-11-34/.hydra/config.yaml
+  
+#  name: unet-wlonlat-noise-8th-glo12-sla-best
+#  checkpoint: ../outputs/2025-08-14/glo12-sla-8th-unet-wlonlat-noise-15-06-40/glo12-sla-8th-unet-wlonlat/checkpoints/best.ckpt
+#  config: ../outputs/2025-08-14/glo12-sla-8th-unet-wlonlat-noise-15-06-40/.hydra/config.yaml
+
+#  name: fdv-latent-noise-8th-glo12-sla-last
+#  checkpoint: ../outputs/2025-08-14/glo12-sla-8th-fdv-latent-08-16-14/glo12-sla-8th-4dvarnet-latent/checkpoints/last.ckpt
+#  config: ../outputs/2025-08-14/glo12-sla-8th-fdv-latent-08-16-14//.hydra/config.yaml
+
+
+# -----------------------------------------------------
+# OSEE-OSE training, 1/4° config
+#  name: unet-osse-only-noise-4th-last
+#  checkpoint: ../outputs/2025-08-18/glo12-sla-4th-unet-testosewosse-osse-only-12-33-24/glo12-sla-4th-unet-test/checkpoints/last.ckpt
+#  config: ../outputs/2025-08-18/glo12-sla-4th-unet-testosewosse-osse-only-12-33-24/.hydra/config.yaml
+
+#  name: unet-ose-osse-noise-4th-last
+#  checkpoint: ../outputs/2025-08-18/glo12-sla-4th-unet-testosewosse-ose-osse-14-01-34/glo12-sla-4th-unet-test/checkpoints/last.ckpt
+#  config: ../outputs/2025-08-18/glo12-sla-4th-unet-testosewosse-ose-osse-14-01-34/.hydra/config.yaml
+
+  name: unet-ose-only-noise-4th-last
+  #checkpoint: ../outputs/2025-08-18/glo12-sla-4th-unet-testosewosse-ose-only-12-23-16/glo12-sla-4th-unet-test/checkpoints/last.ckpt
+  #config: ../outputs/2025-08-18/glo12-sla-4th-unet-testosewosse-ose-only-12-23-16/.hydra/config.yaml
+  checkpoint: ../outputs/2025-08-18/glo12-sla-4th-unet-testosewosse-ose-only-14-12-51/glo12-sla-4th-unet-test/checkpoints/last.ckpt
+  config: ../outputs/2025-08-18/glo12-sla-4th-unet-testosewosse-ose-only-14-12-51/.hydra/config.yaml
+
 #CHECK dvc.yaml for the considered resolution

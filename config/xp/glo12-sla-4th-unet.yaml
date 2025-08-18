@@ -31,17 +31,13 @@ datamodule:
   xrds_kw:
     train:
       patch_dims: {time: 15, lat: 128, lon: 256}
-      strides: {time: 1, lat: 20, lon: 20}
-#      patch_dims: {time: 15, lat: 96, lon: 96}
-#      strides: {time: 1, lat: 88, lon: 88}
+      strides: {time: 1, lat: 100, lon: 100}
       domain_limits: ${domain.train}
       noise: .1
       noise_type: gaussian+uniform
     val:
       patch_dims: {time: 15, lat: 512, lon: 512}
       strides: {time: 1, lat: 500, lon: 500}
-      #patch_dims: {time: 15, lat: 96, lon: 96}
-      #strides: {time: 1, lat: 88, lon: 88}
       domain_limits: ${domain.train}
       noise: .03
       noise_type: gaussian+uniform

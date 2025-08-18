@@ -1,6 +1,8 @@
 # @package _global_
 xpname: glo12-sla-8th-fdv-latent
 ckpt: null
+#ckpt: outputs/2025-08-14/glo12-sla-8th-fdv-latent-08-16-14/glo12-sla-8th-4dvarnet-latent//checkpoints/last.ckpt
+#ckpt: outputs/2025-08-14/glo12-sla-8th-fdv-latent-12-38-05/glo12-sla-8th-4dvarnet-latent/checkpoints/last.ckpt
 
 trainer:
   check_val_every_n_epoch: 3

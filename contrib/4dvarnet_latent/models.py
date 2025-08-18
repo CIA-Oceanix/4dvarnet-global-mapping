@@ -1,3 +1,4 @@
+from collections import namedtuple
 import functools as ft
 import time
 
@@ -9,6 +10,7 @@ import xarray as xr
 from ocean4dvarnet.data import BaseDataModule, TrainingItem
 from ocean4dvarnet.models import Lit4dVarNet,GradSolver
 
+TrainingItemOSEwOSSE = namedtuple('TrainingItemOSEwOSSE', ['input', 'tgt','input_osse','tgt_osse','lon','lat'])
 _LAT_TO_RAD = np.pi / 180.0
 
 class LatentDecoderMR(torch.nn.Module):
@@ -208,9 +210,9 @@ class GradSolverWithLatent(GradSolver):
             #if not self.training:
             #    state = self.prior_cost.forward_ae(state)
 
-                   
-        return self.latent_decoder(state),state # apply decoder from latent representation
+        print(self.latent_decoder(state).shape)
 
+        return self.latent_decoder(state),state # apply decoder from latent representation
 
 class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
     def __init__(self,  
@@ -699,7 +701,7 @@ class UnetSolver(torch.nn.Module):
             pad_w = w_r - w_x
 
             if pad_h > 0 or pad_w > 0:
-                x = funct.pad(x, (0, pad_w, 0, pad_h), mode="reflect", value=0)
+                x = torch.nn.functional.pad(x, (0, pad_w, 0, pad_h), mode="reflect", value=0)
 
             return torch.concat((x, residue), dim=1)
         else:
@@ -1055,3 +1057,149 @@ class LitUnetWithLonLat(LitUnetFromLit4dVarNetIgnoreNaN):
                 )
 
         return loss, out
+
+
+class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
+    def __init__(self,  w_ose, w_osse, scale_loss_ose, osse_type, sig_noise_ose2osse, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.w_ose = w_ose
+        self.w_osse = w_osse
+        self.scale_loss_ose = scale_loss_ose
+        self.osse_type = osse_type
+        self.sig_noise_ose2osse = sig_noise_ose2osse
+
+    def aug_data_with_ose2osse_noise(self,batch,sig_noise_ose2osse=1,osse_type='keep-original'):
+
+        if osse_type == 'noise-from-ose':
+            noise_ose = batch.input - batch.tgt
+
+            print('\n ... noise mean: ', torch.nanmean(noise_ose).detach().cpu().numpy(),
+                  '  std: ',torch.nanstd(noise_ose).detach().cpu().numpy())
+
+            scale_noise = torch.rand((noise_ose.shape[0],))
+            scale_noise = sig_noise_ose2osse * scale_noise.view(-1,1,1,1).repeat(1,noise_ose.shape[1],noise_ose.shape[2],noise_ose.shape[3])
+
+            input_osse_tgt_from_ose = batch.tgt_osse + scale_noise * noise_ose
+
+            return TrainingItemOSEwOSSE(batch.input, batch.tgt,
+                                        input_osse_tgt_from_ose, batch.tgt_osse,
+                                        batch.lon, batch.lat)
+
+        return batch
+
+    def base_step(self, batch, phase):
+        print(self.w_ose,self.w_osse,flush=True)
+
+        # apply osse input simulation if required
+        batch = self.aug_data_with_ose2osse_noise(batch,
+                                                  sig_noise_ose2osse=self.sig_noise_ose2osse,
+                                                  osse_type=self.osse_type)
+
+        # apply model to OSE data
+        out_ose = self.solver(batch)
+
+
+        # apply model to OSSE data
+        batch_osse = TrainingItemOSEwOSSE(batch.input_osse,
+                                          batch.tgt_osse,
+                                          None, None,
+                                          batch.lon,
+                                          batch.lat)
+
+        out_osse = self.solver(batch_osse)
+
+        return out_ose, out_osse, batch_osse
+
+    def loss_mse_lr(self,batch,out,phase,scale=2.):
+        # compute mse losses for average-pooled state
+        m = 1. - torch.isnan( batch.tgt ).float()
+        
+        tgt_lr   = torch.nn.functional.avg_pool2d(batch.tgt,scale)
+        m = torch.nn.functional.avg_pool2d(m.float(),scale)
+        tgt_lr = tgt_lr / (m + 1e-8)    
+        
+        out_lr = torch.nn.functional.avg_pool2d(out,scale)
+        out_lr = out_lr / (m + 1e-8)    
+
+        wrec = self.get_rec_weight(phase)
+        wrec_lr = torch.nn.functional.avg_pool2d(wrec.view(1,wrec.shape[0],wrec.shape[1],wrec.shape[2]),scale)
+        wrec_lr = wrec_lr.squeeze()
+
+        loss =  self.weighted_mse( m * ( out_lr - tgt_lr) ,
+            wrec_lr,
+        )
+
+        grad_loss =  self.weighted_mse(
+            m * ( kfilts.sobel(out_lr) - kfilts.sobel(tgt_lr) ),
+            wrec_lr,
+        )
+
+        return loss, grad_loss
+    
+    def step(self, batch, phase):
+        if self.training and batch.tgt.isfinite().float().mean() < 0.5:
+
+            #print( batch.tgt.isfinite().float().mean() )
+            #print( batch.input.isfinite().float().mean() )
+            #print('\n ****')
+            return None, None
+
+        out_ose, out_osse, batch_osse = self.base_step(batch, phase)
+
+        # training losses
+        loss_mse_ose = self.loss_mse_lr(batch,out_ose,phase,scale=self.scale_loss_ose)
+        loss_mse_osse = self.loss_mse(batch_osse,out_osse,phase)
+
+        #print('\n')
+        #print('\n')
+        #print(loss_mse_ose[0].detach().cpu().numpy(), loss_mse_ose[1].detach().cpu().numpy(),
+        #      loss_mse_osse[0].detach().cpu().numpy(), loss_mse_osse[1].detach().cpu().numpy(),
+        #      flush=True)
+        #print( torch.sqrt( torch.nanmean( (batch.tgt - batch.input)**2 ) ).detach().cpu().numpy(),
+        #       torch.sqrt( torch.nanmean( (batch.tgt_osse - batch.input_osse)**2 ) ).detach().cpu().numpy(),
+        #       flush=True)
+
+        training_loss = self.w_ose * ( self.w_mse * loss_mse_ose[0] + self.w_grad_mse * loss_mse_osse[1] )
+        training_loss += self.w_osse * ( self.w_mse * loss_mse_osse[0] + self.w_grad_mse * loss_mse_osse[1] )
+
+        self.log(
+            f"{phase}_gloss",
+            loss_mse_osse[1],
+            prog_bar=False,
+            on_step=False,
+            on_epoch=True,  # sync_dist=True,
+        )
+        self.log(
+            f"{phase}_mse",
+            10000 * loss_mse_ose[0] * self.norm_stats[phase][1] ** 2,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,  # sync_dist=True,
+            )
+        
+        self.log(
+            f"{phase}_gloss_osse",
+            loss_mse_osse[1],
+            prog_bar=False,
+            on_step=False,
+            on_epoch=True,  # sync_dist=True,
+        )
+        self.log(
+            f"{phase}_mse_osse",
+            10000 * loss_mse_osse[0] * self.norm_stats[phase][1] ** 2,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,  # sync_dist=True,
+            )
+        
+        self.log(
+            f"{phase}_loss",
+            training_loss,
+            prog_bar=False,
+            on_step=False,
+            on_epoch=True,  # sync_dist=True,
+        )
+
+        return training_loss, out_ose
+

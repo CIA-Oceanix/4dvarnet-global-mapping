@@ -32,6 +32,7 @@ cs = ConfigStore.instance()
 
 domains = {
     "glorys": dict(lon=[-180, 180], lat=[-80, 90]),
+    "glorys+": dict(lon=[0, 180], lat=[-80, 90]),
     "eNATL": dict(lon=[-100, 42], lat=[7, 69]),
     "ceNATL": dict(lon=[-61, -9], lat=[12, 64]),
     "NATL": dict(lon=[-77, 5], lat=[27, 64]),

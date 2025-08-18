@@ -1,6 +1,6 @@
 vars:
 - config.yaml:domain,paths
-- params_8th.yaml:exp,dims
+- params_4th.yaml:exp,dims
 
 stages:
   inference:

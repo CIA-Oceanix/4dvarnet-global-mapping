@@ -5,8 +5,9 @@ exp:
   output_var: sla
   mask_path: /Odyssey/public/data_challenge_ssh_ose/data/sad/land_water_mask_8.nc
 
-
 dims:
-  patch: 15-1296-2976 #15-1296-2880
-  stride: 1-800-800
+#  patch: 15-512-512 # 15-1296-2976 #15-1296-2880
+#  stride: 1-196-308
+  patch: 15-256-256 # 15-1296-2976 #15-1296-2880
+  stride: 1-130-170
   res: .125

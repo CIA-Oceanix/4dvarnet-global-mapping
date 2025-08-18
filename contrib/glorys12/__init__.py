@@ -20,6 +20,7 @@ from ocean4dvarnet.models import Lit4dVarNet
 # ----------
 
 TrainingItemwithLonLat = namedtuple('TrainingItemwithLonLat', ['input', 'tgt','lon','lat'])
+TrainingItemOSEwOSSE = namedtuple('TrainingItemOSEwOSSE', ['input', 'tgt','input_osse','tgt_osse','lon','lat'])
 
 class NormParamsNotProvided(Exception):
     """Normalisation parameters have not been provided"""
@@ -210,6 +211,75 @@ class DistinctNormDataModuleWithLonLat(DistinctNormDataModule):
             ],
         )
 
+class DistinctNormDataModuleOSEwOSSE(BaseDataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.tgt_da_ose  = self.input_da[0]
+        self.inp_da_ose  = self.input_da[1]
+
+        self.tgt_da_osse  = self.input_da[2]
+        self.inp_da_osse  = self.input_da[3]
+
+        self.input_mask = None
+
+    def norm_stats(self):
+        if self._norm_stats is None:
+            raise NormParamsNotProvided()
+        return self._norm_stats
+
+    def post_fn(self, phase):
+        m, s, m_osse, s_osse = self.norm_stats()[phase]
+
+        def normalize(item):
+            return (item - m) / s
+
+        def normalize_osse(item):
+            return (item - m_osse) / s_osse
+
+        return ft.partial(
+            ft.reduce,
+            lambda i, f: f(i),
+            [
+                TrainingItemOSEwOSSE._make,
+                lambda item: item._replace(tgt=normalize(item.tgt)),
+                lambda item: item._replace(input=normalize(item.input)),
+                lambda item: item._replace(tgt_osse=normalize_osse(item.tgt_osse)),
+                lambda item: item._replace(input_osse=normalize_osse(item.input_osse)),
+             ],
+        )
+
+
+    def setup(self, stage="test"):
+        print('....... Setup OSEwOSSE dataloader')
+        self.train_ds = LazyXrDatasetOSEwOSSE(
+            (self.tgt_da_ose.sel(self.domains["train"]),
+            self.inp_da_ose.sel(self.domains["train"]),
+            self.tgt_da_osse.sel(self.domains["train"]),
+            self.inp_da_osse.sel(self.domains["train"])),
+            **self.xrds_kw["train"],
+            postpro_fn=self.post_fn("train"),
+            mask=self.input_mask,
+        )
+
+        self.val_ds = LazyXrDatasetOSEwOSSE(
+            (self.tgt_da_ose.sel(self.domains["val"]),
+            self.inp_da_ose.sel(self.domains["val"]),
+            self.tgt_da_osse.sel(self.domains["val"]),
+            self.inp_da_osse.sel(self.domains["val"])),
+            **self.xrds_kw["val"],
+            postpro_fn=self.post_fn("val"),
+            mask=self.input_mask
+        )
+
+    def val_dataloader(self):
+        return torch.utils.data.DataLoader(
+            self.val_ds,
+            shuffle=False,
+            batch_size=1,
+            num_workers=1,
+        )
+
 
 class LazyXrDataset(torch.utils.data.Dataset):
     def __init__(
@@ -372,6 +442,149 @@ class LazyXrDataset(torch.utils.data.Dataset):
             return self.postpro_fn(item)
         return item
 
+class LazyXrDatasetOSEwOSSE(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        ds,
+        patch_dims,
+        domain_limits=None,
+        strides=None,
+        postpro_fn=None,
+        noise_type=None,
+        noise=None,
+        noise_spatial_perturb=None,
+        osse_input_type=None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__()
+        self.return_coords = False
+        self.postpro_fn = postpro_fn
+
+        print('\n.........')
+        print( domain_limits , flush=True)
+        print(ds,flush=True              )
+
+        self.ds = tuple(d.sel(**(domain_limits or {})) for d in ds) 
+
+        self.patch_dims = patch_dims
+        self.strides = strides or {}
+        _dims = ("variable",) + tuple(k for k in self.ds[0].dims)
+        _shape = (2,) + tuple(self.ds[0][k].shape[0] for k in self.ds[0].dims)
+        ds_dims = dict(zip(_dims, _shape))
+        
+        self.ds_size = {
+            dim: max(
+                (ds_dims[dim] - patch_dims[dim]) // strides.get(dim, 1) + 1,
+                0,
+            )
+            for dim in patch_dims
+        }
+        self._rng = np.random.default_rng()
+        self.noise = noise
+        self.noise_spatial_perturb = noise_spatial_perturb
+
+        self.osse_input_type = osse_input_type
+        if noise_type is not None:
+            self.noise_type = noise_type
+        else:
+            self.noise_type = 'uniform-constant'
+
+        self.mask = kwargs.get("mask")
+
+    def __len__(self):
+        size = 1
+        for v in self.ds_size.values():
+            size *= v
+        return size
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
+
+    def get_coords(self):
+        self.return_coords = True
+        coords = []
+        try:
+            for i in range(len(self)):
+                coords.append(self[i])
+        finally:
+            self.return_coords = False
+            return coords
+
+    def __getitem__(self, item):
+        sl = {}
+        _zip = zip(
+            self.ds_size.keys(), np.unravel_index(item, tuple(self.ds_size.values()))
+        )
+
+        for dim, idx in _zip:
+            sl[dim] = slice(
+                self.strides.get(dim, 1) * idx,
+                self.strides.get(dim, 1) * idx + self.patch_dims[dim],
+            )
+
+        name_data = ("tgt", "inp", "tgt_osse", "inp_osse")
+        da = tuple(d.isel(**sl).to_dataset(name=n_).to_array() for d,n_ in zip(self.ds,name_data))
+
+        #print(da,flush=True)
+        data_ose_tgt = da[0].data.astype(np.float32).squeeze()
+        data_ose_input = da[1].data.astype(np.float32).squeeze()
+
+        data_osse_tgt = da[2].data.astype(np.float32).squeeze()
+        #data_osse_input = da[3].data.astype(np.float32).squeeze()                                    
+
+
+        # choose OSSE input data
+        if self.osse_input_type == "from-osse":
+            data_osse_input = da[3].data.astype(np.float32).squeeze()                                 
+        elif self.osse_input_type == "from-ose":
+            mask_ose = 1. - np.isnan(data_ose_input).astype(np.float32)
+            data_osse_input = mask_ose * data_osse_tgt
+        else:
+            data_osse_input = da[3].data.astype(np.float32).squeeze()
+
+        #print('.....')
+        #print( np.nanmean( np.isnan(data_ose_tgt)) , np.nanmean(np.isnan(data_ose_input)) , np.nanmean(np.isnan(data_osse_tgt)), np.nanmean(np.isnan(data_osse_input)) , flush=True)
+
+        if self.noise is not None:
+
+            if self.noise_type ==  'uniform-constant' :
+                #noise =  self._rng.uniform(-self.noise, self.noise, item[0].shape).astype(np.float32)
+                #item[0] = item[0] + noise
+                noise =  self._rng.uniform(-self.noise, self.noise, data_osse_input.shape).astype(np.float32)
+
+                data_osse_input = data_osse_input + noise
+            elif self.noise_type ==  'gaussian+uniform' :
+                scale = self._rng.uniform(0. , self.noise, 1).astype(np.float32)
+                noise = self._rng.normal(0., 1. , data_osse_input.shape).astype(np.float32)
+
+                data_osse_input = data_osse_input + scale * noise
+
+        item = TrainingItemOSEwOSSE(data_ose_input,
+                                    data_ose_tgt,                                    
+                                    data_osse_input,
+                                    data_osse_tgt,
+                                    da[0].coords['lon'].data.astype(np.float32),
+                                    da[0].coords['lat'].data.astype(np.float32))
+
+        
+        #print( np.min(da[0].coords['lon'].data.astype(np.float32)),
+        #       np.max(da[0].coords['lon'].data.astype(np.float32)) )
+
+        #print(item.input.shape)
+        #print(item.tgt.shape)
+        #print(item.input_osse.shape)
+        #print(item.tgt_osse.shape)
+        #print( np.nanmean( np.isnan(item.input)) , np.nanmean(np.isnan(item.tgt)) , np.nanmean(np.isnan(item.input_osse)), np.nanmean(np.isnan(item.tgt_osse)) , flush=True)
+        #print('.....',flush=True)
+
+        if self.return_coords:
+            return da[0].coords.to_dataset()[list(self.patch_dims)]
+        
+        if self.postpro_fn is not None:
+            return self.postpro_fn(item)
+        return item
 
 class LazyXrDatasetWithLonLat(LazyXrDataset):
     def __init__(
@@ -476,10 +689,9 @@ class LazyXrDatasetWithLonLat(LazyXrDataset):
                 item[0] = item[0] + noise + wnoise
 
         item = TrainingItemwithLonLat(item[0],
-                                      item[1],
-                                      item_.coords['lon'].data.astype(np.float32),
-                                      item_.coords['lat'].data.astype(np.float32))
-
+                                    item[1],
+                                    item_.coords['lon'].data.astype(np.float32),
+                                    item_.coords['lat'].data.astype(np.float32))
 
         if self.postpro_fn is not None:
             item = self.postpro_fn(item)
@@ -660,6 +872,105 @@ def load_glorys12_data_on_fly_inp(
 
     return tgt, inp
 
+def load_oseWosse_data_on_fly_inp(
+    tgt_path,
+    inp_path,
+    osse_tgt_path,
+    osse_inp_path,
+    tgt_var="zos",
+    inp_var="input",
+    osse_tgt_var="sla",
+    osse_inp_var="sla",
+):
+ 
+    print('..... Start lazy OSEwOSSE loading',flush=True)
+
+
+    # OSE GT
+    def load_xr_dataset_withlatlontest(path, var_name):
+        ds = xr.open_dataset(path)[var_name]
+
+        print( path , flush=True)
+        print( list(ds.coords) , flush=True )
+        
+        if ( list(ds.coords)[1] == 'latitude' ) or ( list(ds.coords)[2] == 'latitude' ):
+            ds = ds.rename(latitude="lat", longitude="lon")
+        return ds
+
+    # OSE obs
+    ose_tgt = load_xr_dataset_withlatlontest(tgt_path, tgt_var)
+    ose_inp = load_xr_dataset_withlatlontest(inp_path, inp_var)
+
+   # OSSE data
+    osse_tgt = load_xr_dataset_withlatlontest(osse_tgt_path, osse_tgt_var)
+    osse_inp = load_xr_dataset_withlatlontest(osse_inp_path, osse_inp_var)
+
+    print('..... Obs dataset')
+    print('..... NB: only the mask of the obs data might be used by the datamodule')
+    print(ose_inp,flush=True)
+
+    return ose_tgt, ose_inp, osse_tgt, osse_inp
+
+def load_data_on_fly_inp(
+    inp_path,
+    tgt_path=None,
+    tgt_var="zos",
+    inp_var="input",
+):
+ 
+    print('..... Start lazy loading',flush=True)
+
+    isel = None  # dict(time=slice(-365 * 2, None))
+
+    # OSE GT
+    tgt = None
+    if tgt_path is not None:
+        tgt = (
+            xr.open_dataset(tgt_path)[tgt_var]
+            .isel(isel)
+        )
+
+        if list(tgt.coords)[1] == 'latitude' :
+            tgt = tgt.rename(latitude="lat", longitude="lon")
+        
+    # OSE obs
+    inp = (
+        xr.open_dataset(inp_path)[inp_var]
+        .isel(isel)
+    )
+
+    if list(inp.coords)[1] == 'latitude' :
+        inp = inp.rename(latitude="lat", longitude="lon")
+
+    print('..... Obs dataset')
+    print('..... NB: only the mask of the obs data might be used by the datamodule')
+    print(inp,flush=True)
+
+    return tgt, inp
+
+def load_OSEwOSSE_data_on_fly_inp(
+    inp_path_ose,
+    tgt_path_ose=None,
+    tgt_var_ose="zos",
+    inp_var_ose="input",
+    inp_path_osse=None,
+    tgt_path_osse=None,
+    tgt_var_osse="zos",
+    inp_var_osse="input",
+    ):
+ 
+    print('..... Start lazy loading',flush=True)
+
+    isel = None  # dict(time=slice(-365 * 2, None))
+
+    # OSE GT
+    tgt_ose, inp_ose = load_data_on_fly_inp(inp_path=inp_path_ose,tgt_path=tgt_path_ose,
+                                            tgt_var=tgt_var_ose,inp_var=inp_var_ose)
+
+    tgt_osse, inp_osse = load_data_on_fly_inp(inp_path=inp_path_osse,tgt_path=tgt_path_osse,
+                                              tgt_var=tgt_var_osse,inp_var=inp_var_osse)
+
+    return tgt_ose, inp_ose, tgt_osse, inp_osse
 
 def train(trainer, dm, lit_mod, ckpt=None):
     if trainer.logger is not None:
@@ -668,5 +979,10 @@ def train(trainer, dm, lit_mod, ckpt=None):
         print()
 
     start = time.time()
+    
+    print(" Parameter configurations for lit_mod")
+    print(lit_mod.hparams)
     trainer.fit(lit_mod, datamodule=dm, ckpt_path=ckpt)
+
+
     print(f"Durée d'apprentissage : {time.time() - start:.3} s")

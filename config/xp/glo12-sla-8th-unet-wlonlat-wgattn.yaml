@@ -1,0 +1,42 @@
+# @package _global_
+xpname: glo12-sla-8th-unet-wlonlat-wgattn-noise
+
+#ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
+#ckpt: null
+#ckpt: outputs/2025-08-14/glo12-sla-8th-unet-wlonlat-wgattn-noise-09-45-11/glo12-sla-8th-unet-wlonlat/checkpoints/last.ckpt
+ckpt: outputs/2025-08-14/glo12-sla-8th-unet-wlonlat-wgattn-noise-12-45-55/glo12-sla-8th-unet-wlonlat-wgattn/checkpoints/last.ckpt
+
+trainer:
+  check_val_every_n_epoch: 3
+  max_epochs: 350
+  limit_train_batches: 250
+
+datamodule:  
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, lat: 256, lon: 512}
+      strides: {time: 1, lat: 200, lon: 200}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: uniform
+    val:
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 500, lon: 500}
+      #patch_dims: {time: 15, lat: 96, lon: 96}
+      #strides: {time: 1, lat: 88, lon: 88}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: uniform
+  dl_kw: {batch_size: 32, num_workers: 4}
+
+model:
+  solver:
+    _target_: contrib.4dvarnet_latent.models.UnetSolverwithGAttn
+    dim_in: ${datamodule.xrds_kw.train.patch_dims.time}
+    dim_out: ${datamodule.xrds_kw.train.patch_dims.time}
+    dim_inp_attn: 3
+    channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+
+defaults:
+  - glo12-sla-8th-unet-wlonlat.yaml
+  - _self_

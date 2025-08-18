@@ -1,0 +1,33 @@
+# @package _global_
+
+xpname: glo12-sla-8th-unet
+#ckpt: null
+#ckpt: outputs/2025-08-13/glo12-sla-8th-unet-11-57-45/glo12-sla-8th-unet/checkpoints/last.ckpt
+ckpt: outputs/2025-08-13/glo12-sla-8th-unet-20-11-53/glo12-sla-8th-unet/checkpoints/last.ckpt
+
+datamodule:
+  _target_: contrib.glorys12.DataModuleOSEwOSSE #contrib.glorys12.DistinctNormDataModuleWithLonLat # # #
+  input_da:
+    _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
+    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_8th_float32.nc 
+    tgt2_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_8th_float32.nc 
+    inp_path: /SCRATCH/rfablet/Dataset/mask_6nadirs_8th.nc     # from /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/
+    inp_var: inp
+  xrds_kw:
+    train:
+      patch_dims: {time:  15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 200, lon: 200}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: uniform
+    val:
+      patch_dims: {time: 15, lat: 800, lon: 800}
+      strides: {time: 1, lat: 700, lon: 700}
+      noise: .03
+      noise_type: uniform
+  dl_kw: {batch_size: 32, num_workers: 4}
+
+
+defaults:
+  - glo12-sla-4th-unet
+  - _self_

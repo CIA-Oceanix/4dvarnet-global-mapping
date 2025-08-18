@@ -339,6 +339,8 @@ def _run(cfg):
     )
     norm_stats = mean, std
 
+    print( norm_stats )
+
     torch_ds = XrDataset(
         patcher=patcher,
         postpro_fns=postpro_fns,

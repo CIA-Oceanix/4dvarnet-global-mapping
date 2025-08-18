@@ -1,0 +1,77 @@
+# @package _global_
+xpname: glo12-sla-4th-unet-testosewosse-ose-osse #osse
+
+ckpt: null 
+
+trainer:
+  check_val_every_n_epoch: 3
+  max_epochs: 350
+  limit_train_batches: 250
+
+datamodule:  
+  _target_: contrib.glorys12.DistinctNormDataModuleOSEwOSSE #
+  input_da:
+    _target_: contrib.glorys12.load_oseWosse_data_on_fly_inp
+    tgt_path: /SCRATCH/rfablet/Dataset/duacs_2010_2019_0.25deg.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th.nc 
+    inp_path: /SCRATCH/rfablet/Dataset/sla_l3_all_2010_2019_0.25deg_convl4.nc #sla_l3_all_2010_2019_0.25deg.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input.nc
+    inp_var: sla     
+    tgt_var: sla
+    osse_tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th.nc 
+    osse_inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input.nc 
+    osse_inp_var: sla     
+    osse_tgt_var: sla     
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-31']}
+    test: null
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, lat: 256, lon: 256}
+      strides: {time: 1, lat: 200, lon: 200}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: uniform
+      osse_input_type: from-osse
+    val:
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 500, lon: 500}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: uniform
+      osse_input_type: from-osse
+  dl_kw: {batch_size: 32, num_workers: 4}
+  norm_stats:  # norm values from tgt
+    train:
+    - 0. #m ose
+    - 0.1  #std ose
+    - -0.001930378327255099 #m osse
+    - 0.08604745118775728  #std osse
+    val:
+    - 0. #m ose
+    - 0.1  #std ose
+    - -0.001930378327255099 #m osse
+    - 0.08604745118775728  #std osse
+model:
+  _target_: contrib.4dvarnet_latent.models.LitUnetOSEwOSSE
+  w_mse: 50.
+  w_grad_mse: 1000.
+  w_ose: 1. #0.
+  w_osse: 0. #0.
+  scale_loss_ose: 4
+  osse_type: keep-original
+  sig_noise_ose2osse: 1. #from-datamodule
+  opt_fn:
+    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
+    _partial_: true
+    lr: 1e-4
+    T_max: ${trainer.max_epochs}
+  solver:
+    _target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
+    dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}
+    channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+
+defaults:
+  - glo12-sla-base
+  - _self_

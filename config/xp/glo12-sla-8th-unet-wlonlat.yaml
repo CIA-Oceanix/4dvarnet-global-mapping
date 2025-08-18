@@ -1,10 +1,12 @@
 # @package _global_
-xpname: glo12-sla-8th-unet-wlonlat-wgattn-noise
+xpname: glo12-sla-8th-unet-wlonlat-noise
 
 #ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
-ckpt: null
+#ckpt: null
 #ckpt: outputs/2025-08-13/glo12-sla-8th-unet2-wlonlat-noise-18-24-38/glo12-sla-8th-unet-wlonlat/checkpoints//last.ckpt
 #ckpt: outputs/2025-08-13/glo12-sla-8th-unet-wlonlat-noise-23-12-40/glo12-sla-8th-unet-wlonlat/checkpoints/last.ckpt
+#ckpt: outputs/2025-08-14/glo12-sla-8th-unet-wlonlat-noise-09-37-54/glo12-sla-8th-unet-wlonlat/checkpoints/last.ckpt
+ckpt: outputs/2025-08-14/glo12-sla-8th-unet-wlonlat-noise-12-41-14/glo12-sla-8th-unet-wlonlat/checkpoints/last.ckpt
 
 trainer:
   check_val_every_n_epoch: 3
@@ -43,11 +45,9 @@ datamodule:
 
 model:
   solver:
-    _target_: contrib.4dvarnet_latent.models.UnetSolverwithGAttn
-    #_target_: contrib.4dvarnet_latent.models.UnetSolverwithLonLat #ocean4dvarnet.models.GradSolver
+    _target_: contrib.4dvarnet_latent.models.UnetSolverwithLonLat #ocean4dvarnet.models.GradSolver
     dim_in: ${datamodule.xrds_kw.train.patch_dims.time}
     dim_out: ${datamodule.xrds_kw.train.patch_dims.time}
-    dim_inp_attn: 3
     channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
 
 defaults:
