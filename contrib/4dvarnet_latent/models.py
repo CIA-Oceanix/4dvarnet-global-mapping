@@ -792,6 +792,50 @@ class UnetSolverwithGAttn(UnetSolver2):
         x = torch.permute(x, dims=(0, 3, 1, 2))
         return x        
 
+class UnetSolverWithPrepro(UnetSolver2):
+    def __init__(self, dim_in, channel_dims, max_depth=None,dim_out=None,kernel_prepro=None):
+
+        if kernel_prepro is not None:
+            self.kernel_prepro = kernel_prepro
+        else:
+            self.kernel_prepro = (dim_in,)
+
+        super().__init__(dim_in, channel_dims, max_depth,dim_out)
+
+    def preprocess_input_data(self, batch):
+        inp = batch.input.nan_to_num().view(-1,1,batch.input.shape[1],batch.input.shape[2], batch.input.shape[3])
+        mask = 1. - batch.input.isnan().float().view(-1,1,batch.input.shape[1],batch.input.shape[2], batch.input.shape[3])
+
+        new_inp = None
+        for kernel_size in self.kernel_prepro:
+            inp_avg = torch.nn.functional.avg_pool3d(inp, (kernel_size,1,1))
+            m_avg = torch.nn.functional.avg_pool3d(mask, (kernel_size,1,1))
+            inp_avg = inp_avg / ( m_avg + 1e-8 )
+            inp_avg = inp_avg.view(batch.input.shape[0],-1,batch.input.shape[2], batch.input.shape[3])
+
+            if new_inp is not None:
+                new_inp = torch.cat((new_inp, inp_avg), dim=1)
+            else:
+                new_inp = inp_avg
+
+        #print(f"new_inp shape: {new_inp.shape}, inp shape: {inp.shape}",flush=True)
+        new_inp = torch.cat((batch.input.nan_to_num(), new_inp), dim=1)
+
+        return new_inp
+    
+    def forward(self, batch):
+        x_inp_prepro = self.preprocess_input_data(batch)
+
+        # pre-process lon,lat 
+        #lat = _LAT_TO_RAD * batch.lat.view(-1,1,batch.lat.shape[1],1).repeat(1,1,1,batch.input.shape[-1])
+        #lon = _LAT_TO_RAD * batch.lon.view(-1,1,1,batch.lon.shape[1]).repeat(1,1,batch.input.shape[2],1)
+
+        #x_lon_lat = torch.cat( (batch.input.nan_to_num(),torch.cos(lat),torch.cos(lon),torch.sin(lon)),dim=1)
+
+        return self.predict(x_inp_prepro)
+
+
+
 def cosanneal_lr_adam_base(lit_mod, lr, T_max=100, weight_decay=0.):
     """
     Configure an Adam optimizer with cosine annealing learning rate scheduling.
@@ -1060,7 +1104,9 @@ class LitUnetWithLonLat(LitUnetFromLit4dVarNetIgnoreNaN):
 
 
 class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
-    def __init__(self,  w_ose, w_osse, scale_loss_ose, osse_type, sig_noise_ose2osse, *args, **kwargs):
+    def __init__(self,  w_ose, w_osse, scale_loss_ose, osse_type, sig_noise_ose2osse, 
+                 patch_normalization=None, normalization_noise=0.,
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         self.w_ose = w_ose
@@ -1069,15 +1115,18 @@ class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
         self.osse_type = osse_type
         self.sig_noise_ose2osse = sig_noise_ose2osse
 
+        self.patch_normalization = patch_normalization
+        self.normalization_noise = normalization_noise
+
     def aug_data_with_ose2osse_noise(self,batch,sig_noise_ose2osse=1,osse_type='keep-original'):
 
         if osse_type == 'noise-from-ose':
             noise_ose = batch.input - batch.tgt
 
-            print('\n ... noise mean: ', torch.nanmean(noise_ose).detach().cpu().numpy(),
-                  '  std: ',torch.nanstd(noise_ose).detach().cpu().numpy())
+            #print('\n ... noise mean: ', torch.nanmean(noise_ose).detach().cpu().numpy(),
+            #      '  std: ',torch.sqrt(torch.nanmean( (noise_ose  - torch.nanmean(noise_ose))**2 )).detach().cpu().numpy())
 
-            scale_noise = torch.rand((noise_ose.shape[0],))
+            scale_noise = torch.rand((noise_ose.shape[0],)).to(device=batch.input.device)
             scale_noise = sig_noise_ose2osse * scale_noise.view(-1,1,1,1).repeat(1,noise_ose.shape[1],noise_ose.shape[2],noise_ose.shape[3])
 
             input_osse_tgt_from_ose = batch.tgt_osse + scale_noise * noise_ose
@@ -1088,25 +1137,64 @@ class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
 
         return batch
 
-    def base_step(self, batch, phase):
-        print(self.w_ose,self.w_osse,flush=True)
+    def apply_patch_normalization(self, batch, phase):
+        #patch_normalization = 'from-obs'#None # #'from-gt-ose' # 
+        #normalization_noise = True #False
 
-        # apply osse input simulation if required
+        if self.patch_normalization == 'from-obs' :
+            m_new = torch.nanmean( batch.input , dim=(1,2,3) )
+            m_new = m_new.view(-1,1,1,1).repeat(1,batch.input.shape[1],batch.input.shape[2],batch.input.shape[3])
+
+            s_new = torch.sqrt( torch.nanmean( (batch.input - m_new )**2 , dim=(1,2,3) ) )
+            s_new = s_new.view(-1,1,1,1).repeat(1,batch.input.shape[1],batch.input.shape[2],batch.input.shape[3])
+        elif self.patch_normalization == 'from-gt-ose' :
+            m_new = torch.nanmean( batch.tgt , dim=(1,2,3) )
+            m_new = m_new.view(-1,1,1,1).repeat(1,batch.input.shape[1],batch.input.shape[2],batch.input.shape[3])
+
+            s_new = torch.sqrt( torch.nanmean( (batch.tgt - m_new )**2 , dim=(1,2,3) ) )
+            s_new = s_new.view(-1,1,1,1).repeat(1,batch.input.shape[1],batch.input.shape[2],batch.input.shape[3])
+        else:
+            m_new = torch.zeros_like(batch.input)
+            s_new = torch.ones_like(batch.input)
+
+        if ( self.normalization_noise > 0 ) & (phase == 'train') :
+            m_noise = self.normalization_noise * torch.randn( (batch.input.shape[0],1,1,1) , device=batch.input.device )
+            s_noise = 1. + self.normalization_noise * ( torch.rand( (batch.input.shape[0],1,1,1), device=batch.input.device ) - 0.5 )
+
+            m_noise = m_noise.repeat(1,batch.input.shape[1],batch.input.shape[2],batch.input.shape[3])
+            s_noise = s_noise.repeat(1,batch.input.shape[1],batch.input.shape[2],batch.input.shape[3])
+
+
+            m_new = m_new + m_noise
+            s_new = s_new * s_noise
+
+        return TrainingItemOSEwOSSE((batch.input- m_new) / s_new ,
+                                      (batch.tgt - m_new) / s_new,
+                                      None, None,
+                                      batch.lon,
+                                      batch.lat), m_new, s_new
+  
+
+    def base_step(self, batch, phase):
+        # patch-based normalisation for OSE patches
+        batch_,m_new, s_new = self.apply_patch_normalization(batch,phase)
+      
+        # apply solver to ose patches
+        out_ose = self.solver(batch_)
+        out_ose = (out_ose * s_new) + m_new
+
+        # sampling OSSE input data
         batch = self.aug_data_with_ose2osse_noise(batch,
                                                   sig_noise_ose2osse=self.sig_noise_ose2osse,
                                                   osse_type=self.osse_type)
 
-        # apply model to OSE data
-        out_ose = self.solver(batch)
-
-
-        # apply model to OSSE data
         batch_osse = TrainingItemOSEwOSSE(batch.input_osse,
                                           batch.tgt_osse,
                                           None, None,
                                           batch.lon,
                                           batch.lat)
 
+        # apply solver to ose patches
         out_osse = self.solver(batch_osse)
 
         return out_ose, out_osse, batch_osse

@@ -1,7 +1,8 @@
 # @package _global_
-xpname: glo12-sla-4th-unet-testosewosse-ose-osse #osse
+xpname: glo12-sla-4th-unet-osse-only #osse
 
-ckpt: null 
+#ckpt: null 
+ckpt: './outputs/2025-08-18/glo12-sla-4th-unet-osse-only-18-12-13/glo12-sla-4th-unet-test/checkpoints/last.ckpt'
 
 trainer:
   check_val_every_n_epoch: 3
@@ -13,7 +14,7 @@ datamodule:
   input_da:
     _target_: contrib.glorys12.load_oseWosse_data_on_fly_inp
     tgt_path: /SCRATCH/rfablet/Dataset/duacs_2010_2019_0.25deg.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th.nc 
-    inp_path: /SCRATCH/rfablet/Dataset/sla_l3_all_2010_2019_0.25deg_convl4.nc #sla_l3_all_2010_2019_0.25deg.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input.nc
+    inp_path: /SCRATCH/rfablet/Dataset/sla_l3_all_2010_2019_0.25deg_convl4.oldv2.nc #sla_l3_all_2010_2019_0.25deg.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input.nc
     inp_var: sla     
     tgt_var: sla
     osse_tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th.nc 
@@ -57,10 +58,10 @@ model:
   _target_: contrib.4dvarnet_latent.models.LitUnetOSEwOSSE
   w_mse: 50.
   w_grad_mse: 1000.
-  w_ose: 1. #0.
-  w_osse: 0. #0.
+  w_ose: 0. #0.
+  w_osse: 1. #0.
   scale_loss_ose: 4
-  osse_type: keep-original
+  osse_type: noise-from-ose #keep-original
   sig_noise_ose2osse: 1. #from-datamodule
   opt_fn:
     _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base

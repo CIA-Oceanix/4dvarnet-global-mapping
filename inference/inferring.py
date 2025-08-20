@@ -50,27 +50,39 @@ class LitModel(pl.LightningModule):
         if batch_idx == 0:
             self.predict_data = []
 
-        outputs = self.solver(batch)
+        if self.kwargs.get("normalization_type") == 'norm_stats_from_patch' :
+            m_inp = torch.nanmean(  batch.input )
+            s_inp = torch.sqrt( torch.nanmean( (batch.input - m_inp) **2  ) )
+            batch_ = PredictItem( ( batch.input - m_inp ) / s_inp,
+                                   batch.lon, 
+                                   batch.lat )
+        else:
+            batch_ = batch
+            m_inp, s_inp = 0., 1.
 
-        if False :
+        outputs = self.solver(batch_)
+        outputs = outputs * s_inp + m_inp
+
+        if self.kwargs.get("obs_filtering") == True : #True :
             # re-apply model with new normalization parameters
-            mask  = 1.0 - torch.isnan( batch.input ).float()
-            m_out = torch.mean( outputs * mask ) / torch.mean( mask )
-            s_out = torch.sqrt( torch.mean( (outputs - m_out) **2 * mask ) / torch.mean( mask ) )
+            m_new = torch.nanmean( outputs )
+            s_new = torch.sqrt( torch.nanmean( (outputs - m_new) **2  ) )
 
-            batch_ = PredictItem( ( batch.input - m_out ) / s_out )
+            inp_new = ( batch.input - m_new ) / s_new
+            inp_new = torch.where( torch.abs( batch.input - outputs ) < 10 * s_inp , inp_new, torch.nan )
+
+            batch_ = PredictItem( inp_new,
+                                   batch.lon, 
+                                   batch.lat )
+
+
+            # remove outliers
 
             outputs = self.solver(batch_)
-            outputs = outputs * s_out + m_out
-
-
-            m_out = torch.mean( outputs * mask ) / torch.mean( mask )
-            s_out = torch.sqrt( torch.mean( (outputs - m_out) **2 * mask ) / torch.mean( mask ) )
+            outputs = outputs * s_new + m_new
 
         self.bs = self.bs or outputs.shape[0]
         m, s = self.norm_stats
-
-
 
         outputs = outputs.cpu().numpy() * s + m
 
@@ -333,10 +345,16 @@ def _run(cfg):
     ckpt = torch.load(cfg["checkpoint_path"], weights_only=True)
     solver.load_state_dict(ckpt["state_dict"])
 
+    normalisation_type = cfg["normalization_type"]
+    obs_filtering = cfg["obs_filtering"]
+
     mean, std = (
         cfg.get("mean", patcher.da.mean().item()),
         cfg.get("std", patcher.da.std().item()),
     )
+    #mean = 0.
+    #std  = 0.1
+
     norm_stats = mean, std
 
     print( norm_stats )
@@ -381,6 +399,8 @@ def _run(cfg):
         ),
         output_dc_format=cfg.get("output_dc_format", False),
         output_geo_uv=cfg.get("output_geo_uv", False),
+        normalization_type=cfg.get("normalization_type", None),
+        obs_filtering=cfg.get("obs_filtering", None)
     )
     trainer.predict(litmod, dataloaders=dl)
 

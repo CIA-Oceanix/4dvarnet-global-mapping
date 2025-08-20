@@ -16,6 +16,8 @@ stages:
       +input_var=${exp.input_var}
       +output_var=${exp.output_var}
       +output_geo_uv=${method.geo_uv}
+      +normalization_type=${method.normalization_type}
+      +obs_filtering=${method.obs_filtering}
       +output_dc_format=true
       +batch_size=1
       hydra.run.dir=. hydra.output_subdir=null hydra/job_logging=disabled

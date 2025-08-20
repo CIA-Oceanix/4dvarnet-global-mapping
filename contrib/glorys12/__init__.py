@@ -890,10 +890,8 @@ def load_oseWosse_data_on_fly_inp(
     def load_xr_dataset_withlatlontest(path, var_name):
         ds = xr.open_dataset(path)[var_name]
 
-        print( path , flush=True)
-        print( list(ds.coords) , flush=True )
-        
-        if ( list(ds.coords)[1] == 'latitude' ) or ( list(ds.coords)[2] == 'latitude' ):
+        #if ( list(ds.coords)[1] == 'latitude' ) or ( list(ds.coords)[2] == 'latitude' ):
+        if (  'latitude' in list(ds.coords) ) : #or ( list(ds.coords)[2] == 'latitude' ):
             ds = ds.rename(latitude="lat", longitude="lon")
         return ds
 
