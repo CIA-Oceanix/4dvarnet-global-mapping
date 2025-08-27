@@ -1,0 +1,80 @@
+# @package _global_
+xpname: glo12-sla-8th-fdv++
+
+ckpt: null
+
+trainer:
+  check_val_every_n_epoch: 3
+  max_epochs: 1000
+  limit_train_batches: 50 #250
+
+datamodule:
+  _target_: contrib.glorys12.DistinctNormDataModule #contrib.glorys12.DistinctNormDataModuleWithLonLat # # #
+  input_da:
+    _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
+    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_8th_float32.nc 
+    inp_path: /SCRATCH/rfablet/Dataset/mask_6nadirs_8th.nc     # from /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/
+    inp_var: inp
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-31']}
+    test: null
+  xrds_kw:
+    train:
+      patch_dims: {time:  15, lat: 256, lon: 256}
+      strides: {time: 1, lat: 200, lon: 200}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: gaussian+uniform
+    val:
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 700, lon: 700}
+      noise: .03
+      noise_type: uniform
+  dl_kw: {batch_size: 8, num_workers: 4} 
+
+model:
+  _target_: contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN
+  w_mse: 50.
+  w_grad_mse: 1000.
+  w_prior: 1.
+  w_mse_lr: 0.
+  w_grad_mse_lr: 0
+  solver:
+    _target_: contrib.4dvarnet_latent.models.GradSolverZeroInit #ocean4dvarnet.models.GradSolver
+    n_step: 10 #10
+    lr_grad: 0. #1e3
+    std_latent_init: 0.1    
+    # lr_grad: 0.2
+    prior_cost:
+      _target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
+      #_target_: ocean4dvarnet.models.BilinAEPriorCost
+      dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
+      dim_hidden: 128 #64
+      bilin_quad: false
+      # bilin_quad: true
+      downsamp: 4 #null # 4
+      bias: false
+    obs_cost:
+      _target_: ocean4dvarnet.models.BaseObsCost
+    grad_mod:
+      #_target_: ocean4dvarnet.models.ConvLstmGradModel #contrib.4dvarnet_latent.models.ConvLstmGradModel #
+      _target_: contrib.4dvarnet_latent.models.ConvLstmGradModelUnet #contrib.4dvarnet_latent.models.ConvLstmGradModel #
+      dim_in: ${model.solver.prior_cost.dim_in} #${datamodule.xrds_kw.train.patch_dims.time}
+      dim_hidden: 64 #128 #96
+      bias: false
+      dropout: 0.1
+      unet:
+        #_target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
+        _target_: contrib.4dvarnet_latent.models.UnetSolverBilin
+        dim_in: ${model.solver.grad_mod.dim_hidden}
+        dim_out: ${model.solver.prior_cost.dim_in}
+        #channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]   
+        channel_dims: [64, 64, 64, 128, 128, 128, 128, 128, 128, 128]   
+        dropout: 0.1
+        bias: false
+defaults:
+  - glo12-sla-4th-unet
+  - _self_

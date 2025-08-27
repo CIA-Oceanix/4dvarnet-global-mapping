@@ -1,0 +1,67 @@
+# @package _global_
+xpname: glo12-sla-4th-unet-e2e+si-noise-2010-2017-1000epochs
+
+ckpt: null 
+trainer:
+  check_val_every_n_epoch: 3
+  max_epochs: 1000
+  limit_train_batches: 250
+
+datamodule:  
+  _target_: contrib.glorys12.DistinctNormDataModuleWithLonLat #contrib.glorys12.DistinctNormDataModule # #
+  input_da:
+    _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
+    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_float32.nc 
+    inp_path: /SCRATCH/rfablet/Dataset/mask_6nadirs_4th.nc     
+    inp_var: inp
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-31']}
+    test: null
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, lat: 256, lon: 256}
+      strides: {time: 1, lat: 100, lon: 100}
+      domain_limits: ${domain.train}
+      noise: .1
+      noise_type: gaussian+uniform
+    val:
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 500, lon: 500}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: uniform
+  dl_kw: {batch_size: 32, num_workers: 4}
+model:
+  _target_: contrib.4dvarnet_latent.models.LitUnetSI
+  w_mse: 50.
+  w_grad_mse: 1000.
+  w_ose: 1. #0.
+  w_osse: 1. #0.
+  w_si: 1.
+  w_end_to_end: 1.
+  scale_loss_ose: 4
+  osse_type: noise-from-ose # keep-original #
+  sig_noise_ose2osse: 2.0 #
+  patch_normalization: none
+  normalization_noise: 0.
+  training_mode: flow-matching
+  config_x0: gaussian
+  n_steps_val: 2
+  opt_fn:
+    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
+    _partial_: true
+    lr: 1e-4
+    T_max: ${trainer.max_epochs}
+  solver:
+    _target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
+    dim_in: 31 #${datamodule.xrds_kw.train.patch_dims.time}
+    dim_out: 15
+    channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+    #channel_dims: [128, 128, 128, 256, 256, 256, 512, 512, 512, 1024]
+
+defaults:
+  - glo12-sla-base
+  - _self_

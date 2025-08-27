@@ -72,8 +72,6 @@ model:
   _target_: contrib.glorys12.Lit4dVarNetIgnoreNaN
   w_mse: 50.
   w_grad_mse: 1000.
-  w_mse_lr: 50.
-  w_grad_mse_lr: 1000.
   w_prior: 1.
   persist_rw: false
   opt_fn:

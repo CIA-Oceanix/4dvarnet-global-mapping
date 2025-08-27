@@ -22,12 +22,12 @@ if [ ! -d $scrdir ]; then
     mkdir -p $scrdir;
 fi;
 
-cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_float32.nc $scrdir/ #glorys4_2010_2019_sla.nc $scrdir/
-cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_float32.nc $scrdir/ #glorys4_2010_2019_sla.nc $scrdir/
-cp --update=none /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/mask_6nadirs_4th.nc $scrdir/ #glorys4_2010_2019_sla.nc $scrdir/
+cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_8th_float32.nc $scrdir/ #glorys4_2010_2019_sla.nc $scrdir/
+#cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_8th_input_float32.nc $scrdir/ #glorys4_2010_2019_sla.nc $scrdir/
+cp --update=none /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/mask_6nadirs_8th.nc $scrdir/ #glorys4_2010_2019_sla.nc $scrdir/
 
 cd /Odyssey/private/rfablet/Python/4dvarnet-global-mapping
 #srun python main.py xp=glo12-sla-4th-unet domain=glorys
-srun python main.py xp=glo12-sla-4th-4dvarnet-latent domain=glorys
+srun python main.py xp=glo12-sla-8th-fdv domain=glorys
 
 

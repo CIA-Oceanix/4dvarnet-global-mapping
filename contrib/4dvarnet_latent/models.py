@@ -13,6 +13,182 @@ from ocean4dvarnet.models import Lit4dVarNet,GradSolver
 TrainingItemOSEwOSSE = namedtuple('TrainingItemOSEwOSSE', ['input', 'tgt','input_osse','tgt_osse','lon','lat'])
 _LAT_TO_RAD = np.pi / 180.0
 
+class ConvLstmGradModelUnet(torch.nn.Module):
+    """
+    A convolutional LSTM model for gradient modulation.
+
+    Attributes:
+        dim_hidden (int): Number of hidden dimensions.
+        gates (nn.Conv2d): Convolutional gates for LSTM.
+        conv_out (nn.Conv2d): Output convolutional layer.
+        dropout (nn.Dropout): Dropout layer.
+        down (nn.Module): Downsampling layer.
+        up (nn.Module): Upsampling layer.
+    """
+
+    def __init__(self, dim_in, dim_hidden, unet=None, kernel_size=3, dropout=0.1, downsamp=None,bias=False):
+        """
+        Initialize the ConvLstmGradModel.
+
+        Args:
+            dim_in (int): Number of input dimensions.
+            dim_hidden (int): Number of hidden dimensions.
+            kernel_size (int, optional): Kernel size for convolutions. Defaults to 3.
+            dropout (float, optional): Dropout rate. Defaults to 0.1.
+            downsamp (int, optional): Downsampling factor. Defaults to None.
+        """
+        super().__init__()
+        self.dim_hidden = dim_hidden
+        self.gates = torch.nn.Conv2d(
+            dim_in + dim_hidden,
+            4 * dim_hidden,
+            kernel_size=kernel_size,
+            padding=kernel_size // 2,
+            bias=bias
+        )
+
+        if unet is not None:
+            self.conv_out = unet
+            self.use_unet = True
+        else:
+            self.use_unet = False
+            self.conv_out = torch.nn.Conv2d(
+                                dim_hidden, dim_in, kernel_size=kernel_size, 
+                                padding=kernel_size // 2, bias=bias
+                                )
+
+        self.dropout = torch.nn.Dropout(dropout)
+        self._state = []
+        self.down = torch.nn.AvgPool2d(downsamp) if downsamp is not None else torch.nn.Identity()
+        self.up = (
+            torch.nn.UpsamplingBilinear2d(scale_factor=downsamp)
+            if downsamp is not None
+            else torch.nn.Identity()
+        )
+
+    def reset_state(self, inp):
+        """
+        Reset the internal state of the LSTM.
+
+        Args:
+            inp (torch.Tensor): Input tensor to determine state size.
+        """
+        size = [inp.shape[0], self.dim_hidden, *inp.shape[-2:]]
+        self._grad_norm = None
+        self._state = [
+            self.down(torch.zeros(size, device=inp.device)),
+            self.down(torch.zeros(size, device=inp.device)),
+        ]
+
+    def forward(self, x):
+        """
+        Perform the forward pass of the LSTM.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor.
+        """
+        if self._grad_norm is None:
+            self._grad_norm = (x**2).mean().sqrt()
+        x = x / self._grad_norm
+        hidden, cell = self._state
+        x = self.dropout(x)
+        x = self.down(x)
+        gates = self.gates(torch.cat((x, hidden), 1))
+
+        in_gate, remember_gate, out_gate, cell_gate = gates.chunk(4, 1)
+
+        in_gate, remember_gate, out_gate = map(
+            torch.sigmoid, [in_gate, remember_gate, out_gate]
+        )
+        cell_gate = torch.tanh(cell_gate)
+
+        cell = (remember_gate * cell) + (in_gate * cell_gate)
+        hidden = out_gate * torch.tanh(cell)
+
+        self._state = hidden, cell
+
+        if self.use_unet == True:
+            out = self.conv_out.predict(hidden)
+        else:
+            out = self.conv_out(hidden)
+            
+        out = self.up(out)
+
+        return out
+
+class GradSolverZeroInit(GradSolver):
+    """
+    A gradient-based solver for optimization in 4D-VarNet.
+
+    Attributes:
+        prior_cost (nn.Module): The prior cost function.
+        obs_cost (nn.Module): The observation cost function.
+        grad_mod (nn.Module): The gradient modulation model.
+        n_step (int): Number of optimization steps.
+        lr_grad (float): Learning rate for gradient updates.
+        lbd (float): Regularization parameter.
+    """
+
+    def __init__(self, prior_cost, obs_cost, grad_mod, n_step, lr_grad=0.2, lbd=1.0, **kwargs):
+        """
+        Initialize the GradSolver.
+
+        Args:
+            prior_cost (nn.Module): The prior cost function.
+            obs_cost (nn.Module): The observation cost function.
+            grad_mod (nn.Module): The gradient modulation model.
+            n_step (int): Number of optimization steps.
+            lr_grad (float, optional): Learning rate for gradient updates. Defaults to 0.2.
+            lbd (float, optional): Regularization parameter. Defaults to 1.0.
+        """
+        super().__init__(prior_cost, obs_cost, grad_mod, n_step=n_step, lr_grad=lr_grad, lbd=lbd,**kwargs)
+
+        self._grad_norm = None
+
+    def init_state(self, batch, x_init=None):
+        """
+        Initialize the state for optimization.
+
+        Args:
+            batch (dict): Input batch containing data.
+            x_init (torch.Tensor, optional): Initial state. Defaults to None.
+
+        Returns:
+            torch.Tensor: Initialized state.
+        """
+        if x_init is not None:
+            return x_init
+
+        return torch.zeros_like(batch.input).detach().requires_grad_(True)
+
+    def solver_step(self, state, batch, step):
+        """
+        Perform a single optimization step.
+
+        Args:
+            state (torch.Tensor): Current state.
+            batch (dict): Input batch containing data.
+            step (int): Current optimization step.
+
+        Returns:
+            torch.Tensor: Updated state.
+        """
+        var_cost = self.prior_cost(state) + self.lbd**2 * self.obs_cost(state, batch)
+        grad = torch.autograd.grad(var_cost, state, create_graph=True)[0]
+
+        gmod = self.grad_mod(grad)
+
+        state_update = (
+             1. / self.n_step * gmod
+            + self.lr_grad * (step + 1) / self.n_step * grad
+        )
+
+        return state - state_update
+
+
 class LatentDecoderMR(torch.nn.Module):
     def __init__(self, dim_state, dim_latent, channel_dims,scale_factor,interp_mode='linear',w_dx = None):
         super().__init__()
@@ -210,7 +386,7 @@ class GradSolverWithLatent(GradSolver):
             #if not self.training:
             #    state = self.prior_cost.forward_ae(state)
 
-        print(self.latent_decoder(state).shape)
+        #print(self.latent_decoder(state).shape)
 
         return self.latent_decoder(state),state # apply decoder from latent representation
 
@@ -258,64 +434,83 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
             on_epoch=True,
         )
 
+    def loss_mse(self,batch,out,phase):
+        loss =  self.weighted_mse(out - batch.tgt,
+            self.get_rec_weight(phase),
+        )
+
+        grad_loss =  self.weighted_mse(
+            kfilts.sobel(out) - kfilts.sobel(batch.tgt),
+            self.get_rec_weight(phase),
+        )
+
+        return loss, grad_loss
+
+    def loss_prior(self,batch,out,phase):
+
+        # prior cost for estimated latent state    
+        loss_prior_out = self.solver.prior_cost(out) # Why using init_state
+
+        # prior cost for true state
+        loss_prior_tgt = self.solver.prior_cost( batch.tgt.nan_to_num() )
+
+        return loss_prior_out,loss_prior_tgt
 
     def step(self, batch, phase):
         if self.training and batch.tgt.isfinite().float().mean() < 0.5:
             return None, None
 
         loss, out = self.base_step(batch, phase)
-        grad_loss = self.weighted_mse(
-            kfilts.sobel(out) - kfilts.sobel(batch.tgt),
-            self.get_rec_weight(phase),
-        )
 
-        prior_cost = self.solver.prior_cost(self.solver.init_state(batch, out)) # Why using init_state ?
-        self.log(
-            f"{phase}_gloss",
-            grad_loss,
-            prog_bar=False,
-            on_step=False,
-            on_epoch=True,  # sync_dist=True,
-        )
+        loss_mse = self.loss_mse(batch,out,phase)
+        loss_prior = self.loss_prior(batch,out.detach(),phase)
 
-        training_loss = 50 * loss + 1000 * grad_loss + 1.0 * prior_cost
-
-
-        return training_loss, out
-
-    def base_step(self, batch, phase):
-        out = self(batch=batch)
-        loss = self.weighted_mse(out - batch.tgt, self.get_rec_weight(phase))
+        training_loss = self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1]
+        training_loss += self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1]
 
         with torch.no_grad():
             self.log(
                 f"{phase}_mse",
-                10000 * loss * self.norm_stats[phase][1] ** 2,
+                10000 * loss_mse[0] * self.norm_stats[phase][1] ** 2,
                 prog_bar=True,
                 on_step=False,
                 on_epoch=True,  # sync_dist=True,
             )
             self.log(
                 f"{phase}_loss",
-                loss,
+                training_loss,
                 prog_bar=False,
                 on_step=False,
                 on_epoch=True,  # sync_dist=True,
             )
 
-            if phase == "val":
-                # Log the loss in Gulfstream
-                loss_gf = self.weighted_mse(
-                    out[:, :, 445:485, 420:460].detach().cpu().data
-                    - batch.tgt[:, :, 445:485, 420:460].detach().cpu().data,
-                    np.ones_like(out[:, :, 445:485, 420:460].detach().cpu().data),
-                )
-                self.log(
-                    f"{phase}_loss_gulfstream",
-                    loss_gf,
-                    on_step=False,
-                    on_epoch=True,
-                )
+            self.log(
+                f"{phase}_gloss",
+                loss_mse[1],
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+            self.log(
+                f"{phase}_ploss_out",
+                loss_prior[0],
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+            self.log(
+                f"{phase}_ploss_gt",
+                loss_prior[1],
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+
+        return training_loss, out
+
+    def base_step(self, batch, phase):
+        out = self(batch=batch)
+        loss = self.weighted_mse(out - batch.tgt, self.get_rec_weight(phase))
 
         return loss, out
 
@@ -563,7 +758,7 @@ class Lit4dVarNetIgnoreNaNLatent(Lit4dVarNetIgnoreNaN):
         return training_loss, out
 
 class UnetSolver(torch.nn.Module):
-    def __init__(self, dim_in, channel_dims, max_depth=None):
+    def __init__(self, dim_in, channel_dims, max_depth=None,bias=True):
         super().__init__()
 
         if max_depth is not None :
@@ -583,6 +778,7 @@ class UnetSolver(torch.nn.Module):
                 out_channels=channel_dims[self.max_depth * 3],
                 padding="same",
                 kernel_size=3,
+                bias=bias
             ),
             torch.nn.ReLU(),
             torch.nn.Conv2d(
@@ -590,6 +786,7 @@ class UnetSolver(torch.nn.Module):
                 out_channels=channel_dims[self.max_depth * 3],
                 padding="same",
                 kernel_size=3,
+                bias=bias
             ),
             torch.nn.ReLU(),
         )
@@ -600,6 +797,7 @@ class UnetSolver(torch.nn.Module):
                 out_channels=dim_in,
                 padding="same",
                 kernel_size=3,
+                bias=bias
             )
         )
 
@@ -613,6 +811,7 @@ class UnetSolver(torch.nn.Module):
                         out_channels=channel_dims[depth * 3 + 1],
                         padding="same",
                         kernel_size=3,
+                        bias=bias
                     ),
                     torch.nn.ReLU(),
                     torch.nn.Conv2d(
@@ -620,6 +819,7 @@ class UnetSolver(torch.nn.Module):
                         out_channels=channel_dims[depth * 3],
                         padding="same",
                         kernel_size=3,
+                        bias=bias
                     ),
                     torch.nn.ReLU(),
                 )
@@ -630,6 +830,7 @@ class UnetSolver(torch.nn.Module):
                     out_channels=channel_dims[depth * 3 + 2],
                     kernel_size=2,
                     stride=2,
+                    bias=bias
                 )
             )
             self.downs.append(
@@ -641,6 +842,7 @@ class UnetSolver(torch.nn.Module):
                         out_channels=channel_dims[depth * 3],
                         padding="same",
                         kernel_size=3,
+                        bias=bias
                     ),
                     torch.nn.ReLU(),
                     torch.nn.Conv2d(
@@ -648,6 +850,7 @@ class UnetSolver(torch.nn.Module):
                         out_channels=channel_dims[depth * 3 + 1],
                         padding="same",
                         kernel_size=3,
+                        bias=bias
                     ),
                     torch.nn.ReLU(),
                 )
@@ -708,8 +911,143 @@ class UnetSolver(torch.nn.Module):
             return x
 
 
+class BilinAEPriorCostTwoScale(torch.nn.Module):
+    """
+    A prior cost model using bilinear autoencoders.
+
+    Attributes:
+        bilin_quad (bool): Whether to use bilinear quadratic terms.
+        conv_in (nn.Conv2d): Convolutional layer for input.
+        conv_hidden (nn.Conv2d): Convolutional layer for hidden states.
+        bilin_1 (nn.Conv2d): Bilinear layer 1.
+        bilin_21 (nn.Conv2d): Bilinear layer 2 (part 1).
+        bilin_22 (nn.Conv2d): Bilinear layer 2 (part 2).
+        conv_out (nn.Conv2d): Convolutional layer for output.
+        down (nn.Module): Downsampling layer.
+        up (nn.Module): Upsampling layer.
+    """
+
+    def __init__(self, dim_in, dim_hidden, kernel_size=3, downsamp=None, bilin_quad=True, bias=True):
+        """
+        Initialize the BilinAEPriorCost module.
+
+        Args:
+            dim_in (int): Number of input dimensions.
+            dim_hidden (int): Number of hidden dimensions.
+            kernel_size (int, optional): Kernel size for convolutions. Defaults to 3.
+            downsamp (int, optional): Downsampling factor. Defaults to None.
+            bilin_quad (bool, optional): Whether to use bilinear quadratic terms. Defaults to True.
+        """
+        super().__init__()
+        self.bilin_quad = bilin_quad
+        self.conv_in = torch.nn.Conv2d(
+            dim_in, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+        self.conv_hidden = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+
+        self.bilin_1 = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+        self.bilin_21 = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+        self.bilin_22 = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+
+        self.conv_out = torch.nn.Conv2d(
+            2 * dim_hidden, dim_in, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+
+
+        self.conv_in_lr = torch.nn.Conv2d(
+            dim_in, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+        self.conv_hidden_lr = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+
+        self.bilin_1_lr = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+        self.bilin_21_lr = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+        self.bilin_22_lr = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+
+        self.conv_out_lr = torch.nn.Conv2d(
+            2 * dim_hidden, dim_in, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+
+
+        self.down = torch.nn.AvgPool2d(downsamp) if downsamp is not None else torch.nn.Identity()
+        self.up = (
+            torch.nn.UpsamplingBilinear2d(scale_factor=downsamp)
+            if downsamp is not None
+            else torch.nn.Identity()
+        )
+
+    def forward_ae(self, x):
+        """
+        Perform the forward pass through the autoencoder.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor after passing through the autoencoder.
+        """
+
+        # coarse-scale processing
+        x_ = self.down(x)
+        x_ = self.conv_in_lr(x_)
+        x_ = self.conv_hidden_lr(torch.nn.functional.relu(x_))
+
+        nonlin = (
+            self.bilin_21_lr(x_)**2
+            if self.bilin_quad
+            else (self.bilin_21_lr(x_) * self.bilin_22_lr(x_))
+        )
+
+        x_ = self.conv_out_lr(
+            torch.cat([self.bilin_1_lr(x_), nonlin], dim=1)
+        )
+        dx = self.up(x_)
+
+        # fine-scale processing
+        x = self.conv_in(x)
+        x = self.conv_hidden(torch.nn.functional.relu(x))
+
+        nonlin = (
+            self.bilin_21(x)**2
+            if self.bilin_quad
+            else (self.bilin_21(x) * self.bilin_22(x))
+        )
+        x = self.conv_out(
+            torch.cat([self.bilin_1(x), nonlin], dim=1)
+        )
+        
+        return x + dx
+
+    def forward(self, state):
+        """
+        Compute the prior cost using the autoencoder.
+
+        Args:
+            state (torch.Tensor): The current state tensor.
+
+        Returns:
+            torch.Tensor: The computed prior cost.
+        """
+        return torch.nn.functional.mse_loss(state, self.forward_ae(state))
+
+
 class UnetSolver2(UnetSolver):
-    def __init__(self, dim_in, channel_dims, max_depth=None,dim_out=None):
+    def __init__(self, dim_in, channel_dims, max_depth=None,dim_out=None,bias=True):
         super().__init__(dim_in, channel_dims, max_depth)
 
         if dim_out is None :
@@ -721,8 +1059,144 @@ class UnetSolver2(UnetSolver):
                 out_channels=4*dim_out,
                 padding="same",
                 kernel_size=3,
+                bias=bias
             ) )
+
         self.final_linear = torch.nn.Sequential(torch.nn.Linear(4*dim_out, dim_out))
+
+
+class UpsampleWInterpolate(torch.nn.Module):
+    """
+    An upsampling layer with an optional convolution.
+    :param channels: channels in the inputs and outputs.
+    :param use_conv: a bool determining if a convolution is applied.
+    :param dims: determines if the signal is 1D, 2D, or 3D. If 3D, then
+                 upsampling occurs in the inner-two dimensions.
+    """
+
+    def __init__(self, channels, use_conv, out_channels=None, interp_mode='bilinear',bias=True):
+        super().__init__()
+        self.channels = channels
+        self.out_channels = out_channels or channels
+        self.use_conv = use_conv
+        self.interp_mode = interp_mode
+        if use_conv:
+            self.conv  = torch.nn.Conv2d(in_channels=channels,out_channels=out_channels,
+                                        padding="same",kernel_size=1,bias=bias)
+
+    def forward(self, x):
+        x = torch.nn.functional.interpolate(x, scale_factor=2, mode=self.interp_mode)
+        if self.use_conv:
+            x = self.conv(x)
+        return x
+
+class UnetSolverBilin(UnetSolver2):
+    def __init__(self, dim_in, channel_dims, max_depth=None,dim_out=None,interp_mode='bilinear',dropout=0.1,activation_layer=torch.nn.ReLU(),bias=True):
+        super().__init__(dim_in, channel_dims, max_depth=max_depth,bias=bias)
+
+        if dim_out is None :
+            dim_out = dim_in
+
+        self.up_pools   = torch.nn.ModuleList()
+        self.down_pools = torch.nn.ModuleList()
+        self.downs = torch.nn.ModuleList()
+        self.ups = torch.nn.ModuleList()
+
+        self.interp_mode = interp_mode
+        self.dropout = dropout
+        
+        self.bottom_transform = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=channel_dims[self.max_depth * 3 - 1],
+                out_channels=channel_dims[self.max_depth * 3],
+                padding="same",
+                kernel_size=3,
+                bias=bias,
+            ),
+            activation_layer,
+            torch.nn.Dropout(p=dropout),
+            torch.nn.Conv2d(
+                in_channels=channel_dims[self.max_depth * 3],
+                out_channels=channel_dims[self.max_depth * 3],
+                padding="same",
+                kernel_size=3,
+                bias=bias,
+            ),
+            activation_layer,
+        )
+
+        self.final_up = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=channel_dims[0],
+                out_channels=dim_in,
+                padding="same",
+                kernel_size=3,
+                bias=bias,
+            )
+        )
+
+        for depth in range(self.max_depth):
+            self.ups.append(
+                torch.nn.Sequential(
+                    torch.nn.Conv2d(
+                        in_channels=channel_dims[depth * 3 + 2] * 2,
+                        out_channels=channel_dims[depth * 3 + 1],
+                        padding="same",
+                        kernel_size=3,
+                        bias=bias,
+                    ),
+                    activation_layer,
+                    torch.nn.Dropout(p=dropout),
+                    torch.nn.Conv2d(
+                        in_channels=channel_dims[depth * 3 + 1],
+                        out_channels=channel_dims[depth * 3],
+                        padding="same",
+                        kernel_size=3,
+                        bias=bias,
+                    ),
+                    activation_layer,
+                )
+            )
+            self.up_pools.append(
+                    UpsampleWInterpolate(channels=channel_dims[depth * 3 + 3], use_conv=True, 
+                                        out_channels=channel_dims[depth * 3 + 2], interp_mode= self.interp_mode)
+            )
+            self.downs.append(
+                torch.nn.Sequential(
+                    torch.nn.Conv2d(
+                        in_channels=dim_in
+                        if depth == 0
+                        else channel_dims[depth * 3 - 1],
+                        out_channels=channel_dims[depth * 3],
+                        padding="same",
+                        kernel_size=3,
+                        bias=bias,
+                    ),
+                    activation_layer,
+                    torch.nn.Dropout(p=dropout),
+                    torch.nn.Conv2d(
+                        in_channels=channel_dims[depth * 3],
+                        out_channels=channel_dims[depth * 3 + 1],
+                        padding="same",
+                        kernel_size=3,
+                        bias=bias,
+                    ),
+                    activation_layer,
+                )
+            )
+
+            self.down_pools.append(torch.nn.AvgPool2d(kernel_size=2))
+
+        self.final_up = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                in_channels=channel_dims[0],
+                out_channels=4*dim_out,
+                padding="same",
+                kernel_size=3,
+                bias=bias,
+            ) )
+        self.final_linear = torch.nn.Sequential(torch.nn.Linear(4*dim_out, dim_out,bias=bias))
+
 
 class UnetSolverwithLonLat(UnetSolver2):
     def __init__(self, dim_in, channel_dims, max_depth=None,dim_out=None):
@@ -1118,11 +1592,13 @@ class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
         self.patch_normalization = patch_normalization
         self.normalization_noise = normalization_noise
 
+
     def aug_data_with_ose2osse_noise(self,batch,sig_noise_ose2osse=1,osse_type='keep-original'):
 
         if osse_type == 'noise-from-ose':
             noise_ose = batch.input - batch.tgt
-
+            noise_ose = noise_ose[torch.randperm(noise_ose.size(0)),:,:,:]
+            
             #print('\n ... noise mean: ', torch.nanmean(noise_ose).detach().cpu().numpy(),
             #      '  std: ',torch.sqrt(torch.nanmean( (noise_ose  - torch.nanmean(noise_ose))**2 )).detach().cpu().numpy())
 
@@ -1290,4 +1766,124 @@ class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
         )
 
         return training_loss, out_ose
+
+class LitUnetSI(LitUnetOSEwOSSE):
+    def __init__(self, config_x0, training_mode, w_end_to_end, w_si, n_steps_val, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.config_x0 = config_x0
+        self.training_mode = training_mode
+        self.w_end_to_end = w_end_to_end
+        self.w_si = w_si
+        self.n_steps_val = n_steps_val
+
+    def sample_x0(self, batch, phase):
+        if self.config_x0 == 'gaussian':
+            return torch.randn(batch.input.size(),device=batch.input.device)
+        elif self.config_x0 == 'gaussian+obs':
+            return batch.input.nan_to_num() + 0.5 * torch.randn(batch.input.size(),device=batch.input.device)
+
+    def base_step(self, batch, phase):
+
+        if phase == 'train':
+            return self.base_step_train(batch, phase)
+        else:
+            return self.base_step_end_to_end(batch, phase)
+
+    def base_step_train_si(self, batch, phase):
+
+        # sample x0
+        x0 = self.sample_x0(batch, phase)
+
+        # sample time values between 0 and 1
+        # and associated xt states
+        time_values = torch.rand((batch.input.size(0),1,1,1),device=batch.input.device).repeat(1,1,batch.input.size(2),batch.input.size(3))
+        xt = (1-time_values.repeat(1,batch.input.size(1),1,1)) * x0 + time_values.repeat(1,batch.input.size(1),1,1) * batch.tgt.nan_to_num()
+
+        # apply model
+        batch_xt = TrainingItemOSEwOSSE(torch.cat((xt, batch.input.nan_to_num(),time_values), dim=1),
+                                        None,None, None,
+                                        batch.lon, batch.lat)
+            
+        return xt + self.solver(batch_xt)
+
+    def base_step_end_to_end(self, batch, phase):
+        # sample x0
+        x1_hat = self.sample_x0(batch, phase)
+
+        #loop over a number of steps
+        for k in range(self.n_steps_val):
+            step = k / self.n_steps_val
+            time_values = step * torch.ones((x1_hat.size(0),1,x1_hat.size(2),x1_hat.size(3)), device=x1_hat.device)
+
+            batch_xt = TrainingItemOSEwOSSE(torch.cat((x1_hat, batch.input.nan_to_num(),time_values), dim=1),
+                                        None,None, None,
+                                        batch.lon, batch.lat)
+            
+            x1_hat = x1_hat + step * self.solver(batch_xt)
+
+        x1_hat = x1_hat + self.solver(batch_xt)
+
+        return x1_hat
+
+    def forward(self, batch):
+        """
+        Forward pass through the solver.
+
+        Args:
+            batch (dict): Input batch.
+
+        Returns:
+            torch.Tensor: first output of the LatentSolver.
+        """
+        return self.base_step_end_to_end(batch) #self.solver(batch)[0]
+    
+    def step(self, batch, phase):
+        if self.training and batch.tgt.isfinite().float().mean() < 0.5:
+
+            #print( batch.tgt.isfinite().float().mean() )
+            #print( batch.input.isfinite().float().mean() )
+            #print('\n ****')
+            return None, None
+
+        # SI training loss 
+        if self.w_si > 0. :
+            x1_hat = self.base_step_train_si(batch, phase)
+
+            loss_mse = self.loss_mse(batch,x1_hat,phase)
+            training_loss = self.w_si * self.w_ose * ( self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1] )
+
+        else:
+            training_loss = 0.
+
+        # end-to-end training loss
+        if self.w_end_to_end > 0. :
+            x1_hat = self.base_step_end_to_end(batch, phase)
+            
+            loss_mse = self.loss_mse(batch,x1_hat,phase)
+            training_loss =  training_loss + self.w_end_to_end * self.w_ose * ( self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1] )
+
+        self.log(
+            f"{phase}_gloss",
+            loss_mse[1],
+            prog_bar=False,
+            on_step=False,
+            on_epoch=True,  # sync_dist=True,
+        )
+        self.log(
+            f"{phase}_mse",
+            10000 * loss_mse[0] * self.norm_stats[phase][1] ** 2,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,  # sync_dist=True,
+            )
+        
+        self.log(
+            f"{phase}_loss",
+            training_loss,
+            prog_bar=False,
+            on_step=False,
+            on_epoch=True,  # sync_dist=True,
+        )
+
+        return training_loss, x1_hat
 

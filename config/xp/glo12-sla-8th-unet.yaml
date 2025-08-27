@@ -1,9 +1,16 @@
 # @package _global_
 
-xpname: glo12-sla-8th-unet
+trainer:
+  check_val_every_n_epoch: 3
+  max_epochs: 1000
+  limit_train_batches: 250
+
+xpname: glo12-sla-8th-unet+-1000epochs
+
 #ckpt: null
 #ckpt: outputs/2025-08-13/glo12-sla-8th-unet-11-57-45/glo12-sla-8th-unet/checkpoints/last.ckpt
-ckpt: outputs/2025-08-13/glo12-sla-8th-unet-20-11-53/glo12-sla-8th-unet/checkpoints/last.ckpt
+#ckpt: outputs/2025-08-13/glo12-sla-8th-unet-20-11-53/glo12-sla-8th-unet/checkpoints/last.ckpt
+ckpt: outputs/2025-08-24/glo12-sla-8th-unet+-15-14-29/glo12-sla-8th-unet/checkpoints/last.ckpt
 
 datamodule:
   _target_: contrib.glorys12.DistinctNormDataModule #contrib.glorys12.DistinctNormDataModuleWithLonLat # # #
@@ -12,21 +19,42 @@ datamodule:
     tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_8th_float32.nc 
     inp_path: /SCRATCH/rfablet/Dataset/mask_6nadirs_8th.nc     # from /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/
     inp_var: inp
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-31']}
+    test: null
   xrds_kw:
     train:
       patch_dims: {time:  15, lat: 512, lon: 512}
       strides: {time: 1, lat: 200, lon: 200}
       domain_limits: ${domain.train}
       noise: .03
-      noise_type: uniform
+      noise_type: gaussian+uniform
     val:
       patch_dims: {time: 15, lat: 800, lon: 800}
       strides: {time: 1, lat: 700, lon: 700}
       noise: .03
       noise_type: uniform
-  dl_kw: {batch_size: 32, num_workers: 4}
+  dl_kw: {batch_size: 16, num_workers: 4} 
 
-
+model:
+  _target_: contrib.4dvarnet_latent.models.LitUnetFromLit4dVarNetIgnoreNaN
+  w_mse: 50.
+  w_grad_mse: 1000.
+  w_mse_lr: 0.
+  w_grad_mse_lr: 0.
+  opt_fn:
+    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
+    _partial_: true
+    lr: 1e-4
+    T_max: ${trainer.max_epochs}
+  solver:
+    _target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
+    dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}
+    #channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+    channel_dims: [128, 128, 128, 256, 256, 256, 512, 512, 512, 1024]
 defaults:
-  - glo12-sla-4th-unet
+  - glo12-sla-base
   - _self_

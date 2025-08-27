@@ -1,8 +1,8 @@
 # @package _global_
-xpname: glo12-sla-4th-unet #prepro-ose-osse-small-batches
+#xpname: glo12-sla-4th-unet-prepro-2010-2017-osse-ose #prepro-ose-osse-small-batches
 #xpname: glo12-sla-4th-unet-ose-only
-#xpname: glo12-sla-4th-unet-ose-osse-smaller-batches-2016-2018
-#xpname: glo12-sla-4th-unet-osse-only
+xpname: glo12-sla-4th-unet-ose-osse-noise2+-small-batches-2010-2017
+#xpname: glo12-sla-4th-unet-osse-only-2010-2017
 
 ckpt: null 
 #ckpt: 'outputs/2025-08-18/glo12-sla-4th-unet-osse-only-18-45-38/glo12-sla-4th-unet-oseWosse/checkpoints/last.ckpt'
@@ -28,11 +28,11 @@ datamodule:
     osse_tgt_var: sla     
   domains:
     train:
-      #time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
-      time: {_target_: builtins.slice, _args_: ['2016-06-01', '2018-12-31']}
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+      #time: {_target_: builtins.slice, _args_: ['2016-06-01', '2018-12-31']}
     val:
-      #time: {_target_: builtins.slice, _args_: ['2019-01-01', '2019-12-30']}
-      time: {_target_: builtins.slice, _args_: ['2019-01-01', '2019-12-30']} ## validation on test period
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-30']}
+      #time: {_target_: builtins.slice, _args_: ['2019-01-01', '2019-12-30']} ## validation on test period
     test: null
   xrds_kw:
     train:
@@ -71,7 +71,7 @@ model:
   w_osse: 1. #0.
   scale_loss_ose: 4
   osse_type: noise-from-ose # keep-original #
-  sig_noise_ose2osse: 1. #
+  sig_noise_ose2osse: 2.0 #
   patch_normalization: none
   normalization_noise: 0.
   opt_fn:
@@ -81,6 +81,7 @@ model:
     T_max: ${trainer.max_epochs}
   solver:
     _target_: contrib.4dvarnet_latent.models.UnetSolver2 #contrib.4dvarnet_latent.models.UnetSolverWithPrepro #ocean4dvarnet.models.GradSolver 
+    #_target_: contrib.4dvarnet_latent.models.UnetSolverWithPrepro #ocean4dvarnet.models.GradSolver 
     dim_in: 15 #15 ${datamodule.xrds_kw.train.patch_dims.time}
     dim_out: 15
     channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]

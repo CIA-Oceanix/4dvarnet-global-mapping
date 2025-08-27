@@ -1,15 +1,11 @@
 # @package _global_
-xpname: glo12-sla-4th-unet-interp-silu
+xpname: glo12-sla-4th-unet-2010-2017-2000epochs
 
-ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
-#ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-noise2-19-24-46/glo12-sla-4th-unet/checkpoints//last.ckpt
-#ckpt: outputs/2025-08-13/glo12-sla-4th-unet-noise2+-07-34-32/glo12-sla-4th-unet/checkpoints/last.ckpt
-#ckpt: outputs/2025-08-20/glo12-sla-4th-unet-2010-2017-19-33-40/glo12-sla-4th-unet/checkpoints/last.ckpt
-#ckpt: outputs/2025-08-22/glo12-sla-4th-unet-2010-2017-1000epochs-08-21-41/glo12-sla-4th-unet/checkpoints/last.ckpt
+ckpt: null 
 
 trainer:
   check_val_every_n_epoch: 3
-  max_epochs: 350
+  max_epochs: 2000
   limit_train_batches: 250
 
 datamodule:  
@@ -54,15 +50,24 @@ model:
     lr: 1e-4
     T_max: ${trainer.max_epochs}
   solver:
-    #_target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
-    _target_: contrib.4dvarnet_latent.models.UnetSolverBilin
-    dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}
-    dropout: 0.
-    channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
-    interp_mode: bilinear
-    activation_layer:
-      _target_: torch.nn.SiLU
-    #channel_dims: [128, 128, 128, 256, 256, 256, 512, 512, 512, 1024]
+    _target_: contrib.4dvarnet_latent.unet.UNetModel #ocean4dvarnet.models.GradSolver
+    in_channels: 15 #${datamodule.xrds_kw.train.patch_dims.time}
+    model_channels: 128
+    out_channels: 15
+    num_res_blocks: 4
+    attention_resolutions: [2]
+    dropout: 0.3
+    channel_mult: [2, 2, 2]
+    conv_resample: false
+    dims: 2
+    use_checkpoint: false
+    num_heads: 1
+    num_head_channels: -1
+    num_heads_upsample: -1
+    use_scale_shift_norm: true
+    resblock_updown: false
+    use_new_attention_order: true
+    with_fourier_features: false
 defaults:
   - glo12-sla-base
   - _self_

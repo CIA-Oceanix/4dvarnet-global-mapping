@@ -3,8 +3,8 @@ method:
   # SLA
   # -------------------------------------------------------------------
   geo_uv: false
-  normalization_type: norm_stats_from_patch
-  obs_filtering: true
+  normalization_type: none #norm_stats_from_patch
+  obs_filtering: false #true
 #  name: unet-4th-glo12-sla
 #  checkpoint: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/glo12-sla-4th-unet/checkpoints/best.ckpt
 #  config: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/.hydra/config.yaml
@@ -85,7 +85,46 @@ method:
   #config: ../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-small-batches-2016-2018-10-28-04/.hydra/config.yaml
 
 
-  name: unet-osse-osse-4th-small-batches-inp-prepro-best
-  checkpoint: ../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-small-epochs-inp-prepro-19-09-34/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
-  config: ../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-small-epochs-inp-prepro-19-09-34/.hydra/config.yaml
-#CHECK dvc.yaml for the considered resolution
+  #name: unet-osse-osse-4th-small-batches-inp-prepro-best
+  #checkpoint: ../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-small-epochs-inp-prepro-19-09-34/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-small-epochs-inp-prepro-19-09-34/.hydra/config.yaml
+
+  #name: unet-run2-4th-best
+  #checkpoint: ../outputs/2025-08-20/glo12-sla-4th-unet-2010-2017-19-33-40/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-20/glo12-sla-4th-unet-2010-2017-19-33-40/.hydra/config.yaml
+
+  #name: unet-run2-osse-ose-4th-best
+  #checkpoint: ../outputs/2025-08-20/glo12-sla-4th-unet-prepro-2010-2017-osse-ose-18-29-49/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-20/glo12-sla-4th-unet-prepro-2010-2017-osse-ose-18-29-49/.hydra/config.yaml
+
+  #name: unet-run2-osse-only-4th-best
+  #checkpoint: ../outputs/2025-08-20/glo12-sla-4th-unet-osse-only-2010-2017-22-11-36/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-20/glo12-sla-4th-unet-osse-only-2010-2017-22-11-36/.hydra/config.yaml
+
+  #name: unet-osse-osse-4th-noise2-best
+  #checkpoint: ../outputs/2025-08-21/glo12-sla-4th-unet-ose-osse-noise2-small-batches-2010-2017-23-33-18/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-21/glo12-sla-4th-unet-ose-osse-noise2-small-batches-2010-2017-23-33-18/.hydra/config.yaml
+
+  #name: unet-osse-osse-4th-noise2--best
+  #checkpoint: ../outputs/2025-08-22/glo12-sla-4th-unet-ose-osse-noise2--small-batches-2010-2017-08-15-29/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-22/glo12-sla-4th-unet-ose-osse-noise2--small-batches-2010-2017-08-15-29/.hydra/config.yaml
+
+  #name: unet-run2-8th-best
+  #checkpoint: ../outputs/2025-08-22/glo12-sla-8th-unet-18-18-28/glo12-sla-8th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-22/glo12-sla-8th-unet-18-18-28/.hydra/config.yaml
+
+  #name: unet-1000epochs-run2-4th-best
+  #checkpoint: ../outputs/2025-08-22/glo12-sla-4th-unet-2010-2017-1000epochs-08-21-41/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-22/glo12-sla-4th-unet-2010-2017-1000epochs-08-21-41/.hydra/config.yaml
+
+  #name: unet+-run2-8th-best-v1
+  #checkpoint: ../outputs/2025-08-24/glo12-sla-8th-unet+-15-14-29/glo12-sla-8th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-24/glo12-sla-8th-unet+-15-14-29/.hydra/config.yaml
+
+  name: unet-interp-relu-4th-best
+  checkpoint: ../outputs/2025-08-25/glo12-sla-4th-unet-interp-relu-17-00-19/glo12-sla-4th-unet/checkpoints/best.ckpt
+  config: ../outputs/2025-08-25/glo12-sla-4th-unet-interp-relu-17-00-19/.hydra/config.yaml
+
+  #name: unet-interp-silu-4th-best
+  #checkpoint: ../outputs/2025-08-25/glo12-sla-4th-unet-interp-silu-17-03-02/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-25/glo12-sla-4th-unet-interp-silu-17-03-02/.hydra/config.yaml

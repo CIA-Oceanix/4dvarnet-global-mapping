@@ -1,25 +1,19 @@
 # @package _global_
-xpname: glo12-sla-8th-unet-ose-osse-small-batches-epoch
-#xpname: glo12-sla-4th-unet-ose-only
-#xpname: glo12-sla-4th-unet-ose-osse-smaller-batches-2016-2018
-#xpname: glo12-sla-4th-unet-osse-only
+xpname: glo12-sla-8th-unet-ose-osse-noise2-small-batches-epoch
 
 ckpt: null 
-#ckpt: 'outputs/2025-08-18/glo12-sla-4th-unet-osse-only-18-45-38/glo12-sla-4th-unet-oseWosse/checkpoints/last.ckpt'
-#ckpt: 'outputs/2025-08-18/glo12-sla-4th-unet-ose-osse-18-47-47/glo12-sla-4th-unet-oseWosse/checkpoints/last.ckpt' 
-#ckpt: 'outputs/2025-08-18/glo12-sla-4th-unet-ose-osse-small-epochs-18-55-17/glo12-sla-4th-unet-oseWosse/checkpoints/last.ckpt'
 
 trainer:
   check_val_every_n_epoch: 3
-  max_epochs: 350
+  max_epochs: 500
   limit_train_batches: 100 #250 #50 #250
 
 datamodule:  
   _target_: contrib.glorys12.DistinctNormDataModuleOSEwOSSE #
   input_da:
     _target_: contrib.glorys12.load_oseWosse_data_on_fly_inp
-    tgt_path: /SCRATCH/rfablet/Dataset/duacs_2010_2019_0.125deg.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th.nc 
-    inp_path: /SCRATCH/rfablet/Dataset/sla_l3_all_2010_2019_0.125deg_convl4.nc #sla_l3_all_2010_2019_0.25deg.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input.nc
+    tgt_path: /SCRATCH/rfablet/Dataset/duacs_2010_2019_0.125deg_float32.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th.nc 
+    inp_path: /SCRATCH/rfablet/Dataset/sla_l3_all_2010_2019_0.125deg_convl4.nc #_float32.nc #sla_l3_all_2010_2019_0.25deg.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input.nc
     inp_var: sla     
     tgt_var: sla
     osse_tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_8th_float32.nc 
@@ -68,23 +62,25 @@ model:
   w_mse: 50.
   w_grad_mse: 1000.
   w_ose: 1. #0.
-  w_osse: 0. #0.
+  w_osse: 1. #0.
   scale_loss_ose: 4
   osse_type: noise-from-ose # keep-original #
-  sig_noise_ose2osse: 1. #
+  sig_noise_ose2osse: 1.0 #
   patch_normalization: none
   normalization_noise: 0.
-  preprocessing_input: none #anomaly-wrt-time-mean
   opt_fn:
     _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
     _partial_: true
     lr: 1e-4
     T_max: ${trainer.max_epochs}
   solver:
-    _target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
-    dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}
+    _target_: contrib.4dvarnet_latent.models.UnetSolver2 #contrib.4dvarnet_latent.models.UnetSolverWithPrepro #ocean4dvarnet.models.GradSolver 
+    #_target_: contrib.4dvarnet_latent.models.UnetSolverWithPrepro #ocean4dvarnet.models.GradSolver 
+    dim_in: 15 #15 ${datamodule.xrds_kw.train.patch_dims.time}
+    dim_out: 15
     channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
-
+    #kernel_prepro: [15,5]
 defaults:
   - glo12-sla-base
   - _self_
+

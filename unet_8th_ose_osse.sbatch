@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --partition=Odyssey                       
-#SBATCH --gres=gpu:a100:1                       
+#SBATCH --gres=gpu:h100:1                       
 #SBATCH --job-name=unet-8th                     
 #SBATCH --output=logs/Test-GPU_%j.log           
 #SBATCH --mem=100G
@@ -22,14 +22,13 @@ if [ ! -d $scrdir ]; then
     mkdir -p $scrdir;
 fi;
 
+
+cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_8th_float32.nc $scrdir/ #glorys4_2010_2019_sla.nc $scrdir/
 cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_8th_input.nc $scrdir/ #glorys4_2010_2019_sla.nc $scrdir/
 cp --update=none /Odyssey/public/altimetry_traces/2010_2019/gridded_0.125deg/sla_l3_all_2010_2019_0.125deg_convl4.nc $scrdir/
-cp --update=none /Odyssey/public/duacs/2010_2019/duacs_2010_2019_0.125deg.nc $scrdir/
-
-cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_8th_float32.nc $scrdir/ 
-cp --update=none /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/mask_6nadirs_8th.nc   $scrdir/  # from /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/
-
+#cp --update=none /Odyssey/public/duacs/2010_2019/duacs_2010_2019_0.125deg.nc $scrdir/
+cp --update=none /Odyssey/public/duacs/2010_2019/duacs_2010_2019_0.125deg_float32.nc $scrdir/
 
 cd /Odyssey/private/rfablet/Python/4dvarnet-global-mapping
 #srun  python main.py main.py xp=glo12-sla-4th-unet domain=glorys
-srun python main.py xp=glo12-sla-8th-unet domain=glorys
+srun python main.py xp=glo12-sla-8th-unet-oseWosse domain=glorys
