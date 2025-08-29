@@ -50,7 +50,7 @@ class LitModel(pl.LightningModule):
         if batch_idx == 0:
             self.predict_data = []
 
-        if self.kwargs.get("normalization_type") == 'norm_stats_from_patch' :
+        if False : #self.kwargs.get("normalization_type") == 'norm_stats_from_patch' :
             m_inp = torch.nanmean(  batch.input )
             s_inp = torch.sqrt( torch.nanmean( (batch.input - m_inp) **2  ) )
             batch_ = PredictItem( ( batch.input - m_inp ) / s_inp,
@@ -63,7 +63,7 @@ class LitModel(pl.LightningModule):
         outputs = self.solver(batch_)
         outputs = outputs * s_inp + m_inp
 
-        if self.kwargs.get("obs_filtering") == True : #True :
+        if False: #self.kwargs.get("obs_filtering") == True : #True :
             # re-apply model with new normalization parameters
             m_new = torch.nanmean( outputs )
             s_new = torch.sqrt( torch.nanmean( (outputs - m_new) **2  ) )
@@ -169,6 +169,7 @@ class LitModel(pl.LightningModule):
             mdt = (
                 #xr.open_dataset("data/MDT_DUACS_0.25deg.nc")
                 xr.open_dataset("/Odyssey/public/duacs/2019/from-datachallenge-global-ose-2023/MDT_DUACS_0.25deg.nc")
+                #xr.open_dataset("/Odyssey/public/duacs/2019/from-datachallenge-global-ose-2023/MDT_DUACS_0.25deg_0.125grid.nc")
                 .sel(
                     latitude=slice(
                         final_reconstruction.latitude[0],
@@ -182,14 +183,17 @@ class LitModel(pl.LightningModule):
                 .mdt
             )
 
-            mask = mdt.where(mdt.isnull(), 0.0)
-            final_reconstruction = final_reconstruction.interp(
-                coords=dict(
-                    latitude=mask.latitude,
-                    longitude=mask.longitude,
+            if self.kwargs.get("interp_on_mdt_grid", False):
+                mask = mdt.where(mdt.isnull(), 0.0)
+                final_reconstruction = final_reconstruction.interp(
+                    coords=dict(
+                        latitude=mask.latitude,
+                        longitude=mask.longitude,
                 ),
-                method="linear",
+                method='cubic',#"linear",
             )
+            else:
+                mask = np.zeros_like(final_reconstruction[out_var].values)
 
             if self.kwargs.get("output_geo_uv", False):
                 if "adt" in final_reconstruction:
@@ -402,8 +406,11 @@ def _run(cfg):
         normalization_type=cfg.get("normalization_type", None),
         obs_filtering=cfg.get("obs_filtering", None)
     )
-    trainer.predict(litmod, dataloaders=dl)
 
+    #litmod.solver.solver.n_step = 15
+    #print('.... number of steps: ', litmod.solver.solver.n_step)
+
+    trainer.predict(litmod, dataloaders=dl)
 
 def build_weight(patch_dims, dim_weights=None):
     if not dim_weights:
@@ -414,7 +421,6 @@ def build_weight(patch_dims, dim_weights=None):
         * dim_weights.get("lat", np.ones)(patch_dims["lat"])[None, :, None]
         * dim_weights.get("lon", np.ones)(patch_dims["lon"])[None, None, :]
     )
-
 
 def calculate_geostrophic_velocities_cpu(ssh, lat, lon):
     dssh_dy = np.gradient(ssh, axis=1)
@@ -484,6 +490,8 @@ def retreive_geos_velocities(maps, var="ssh"):
 def triang(n, min=0.05):
     return np.clip(1 - np.abs(np.linspace(-1, 1, n)), min, 1.0)
 
+def triang2(n, min=0.05):
+    return np.clip(1 - 2 * np.abs(np.linspace(-1, 1, n)), min, 1.0)
 
 if __name__ == "__main__":
     _run()

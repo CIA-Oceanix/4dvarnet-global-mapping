@@ -6,6 +6,8 @@ exp:
   mask_path: /Odyssey/public/data_challenge_ssh_ose/data/sad/land_mask_1_4_degree.nc
 
 dims:
-  patch: 15-648-1488
-  stride: 1-200-200
+#  patch: 15-648-1488
+#  stride: 1-200-200
+  patch: 15-512-512
+  stride: 1-136-244
   res: .25

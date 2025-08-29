@@ -5,6 +5,7 @@ method:
   geo_uv: false
   normalization_type: none #norm_stats_from_patch
   obs_filtering: false #true
+  interp_on_mdt_grid: false #true
 #  name: unet-4th-glo12-sla
 #  checkpoint: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/glo12-sla-4th-unet/checkpoints/best.ckpt
 #  config: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/.hydra/config.yaml
@@ -113,18 +114,38 @@ method:
   #checkpoint: ../outputs/2025-08-22/glo12-sla-8th-unet-18-18-28/glo12-sla-8th-unet/checkpoints/best.ckpt
   #config: ../outputs/2025-08-22/glo12-sla-8th-unet-18-18-28/.hydra/config.yaml
 
-  #name: unet-1000epochs-run2-4th-best
+  #name: unet-1000epochs-run2-4th-best-nointerp
   #checkpoint: ../outputs/2025-08-22/glo12-sla-4th-unet-2010-2017-1000epochs-08-21-41/glo12-sla-4th-unet/checkpoints/best.ckpt
   #config: ../outputs/2025-08-22/glo12-sla-4th-unet-2010-2017-1000epochs-08-21-41/.hydra/config.yaml
 
-  #name: unet+-run2-8th-best-v1
+  #name: unet+-run2-8th-best-v3-interpcubic #mdt8th
   #checkpoint: ../outputs/2025-08-24/glo12-sla-8th-unet+-15-14-29/glo12-sla-8th-unet/checkpoints/best.ckpt
   #config: ../outputs/2025-08-24/glo12-sla-8th-unet+-15-14-29/.hydra/config.yaml
+  #checkpoint: ../outputs/2025-08-26/glo12-sla-8th-unet+-1000epochs-13-18-40/glo12-sla-8th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-26/glo12-sla-8th-unet+-1000epochs-13-18-40/.hydra/config.yaml
 
-  name: unet-interp-relu-4th-best
-  checkpoint: ../outputs/2025-08-25/glo12-sla-4th-unet-interp-relu-17-00-19/glo12-sla-4th-unet/checkpoints/best.ckpt
-  config: ../outputs/2025-08-25/glo12-sla-4th-unet-interp-relu-17-00-19/.hydra/config.yaml
+  #name: unet-interp-relu-4th-best
+  #checkpoint: ../outputs/2025-08-25/glo12-sla-4th-unet-interp-relu-17-00-19/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-25/glo12-sla-4th-unet-interp-relu-17-00-19/.hydra/config.yaml
+  #name: unet-interp-relu-4th-v2-best-nointerp
+  #checkpoint: ../outputs/2025-08-27/glo12-sla-4th-unet-interp-silu-stride-22-38-10/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-27/glo12-sla-4th-unet-interp-silu-stride-22-38-10/.hydra/config.yaml
 
-  #name: unet-interp-silu-4th-best
+  #name: unet-interp-silu-4th-v2-best
   #checkpoint: ../outputs/2025-08-25/glo12-sla-4th-unet-interp-silu-17-03-02/glo12-sla-4th-unet/checkpoints/best.ckpt
   #config: ../outputs/2025-08-25/glo12-sla-4th-unet-interp-silu-17-03-02/.hydra/config.yaml
+
+  name: fdv++-4th-best-stride-nointerp
+  #checkpoint: ../outputs/2025-08-26/glo12-sla-4th-fdv++-13-23-14/glo12-sla-4th-fdv/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-26/glo12-sla-4th-fdv++-13-23-14/.hydra/config.yaml
+  checkpoint: ../outputs/2025-08-27/glo12-sla-4th-fdv++-stride-22-33-21/glo12-sla-4th-fdv/checkpoints/best.ckpt
+  config: ../outputs/2025-08-27/glo12-sla-4th-fdv++-stride-22-33-21/.hydra/config.yaml
+
+  #name: fdv-latent++-4th-best
+  #checkpoint: ../outputs/2025-08-25/glo12-sla-4th-fdv-latent++-22-42-31/glo12-sla-4th-4dvarnet-latent/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-25/glo12-sla-4th-fdv-latent++-22-42-31/.hydra/config.yaml
+
+
+  #name: fdv-latent+-4th-best
+  #checkpoint: ../outputs/2025-08-25/glo12-sla-4th-fdv-latent+-22-30-32/glo12-sla-4th-4dvarnet-latent/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-25/glo12-sla-4th-fdv-latent+-22-30-32/.hydra/config.yaml

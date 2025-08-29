@@ -1,5 +1,5 @@
 # @package _global_
-xpname: glo12-sla-4th-unet-interp-silu
+xpname: glo12-sla-4th-unet-interp-silu-stride
 
 ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
 #ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-noise2-19-24-46/glo12-sla-4th-unet/checkpoints//last.ckpt
@@ -9,7 +9,7 @@ ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/
 
 trainer:
   check_val_every_n_epoch: 3
-  max_epochs: 350
+  max_epochs: 1000
   limit_train_batches: 250
 
 datamodule:  
@@ -33,13 +33,13 @@ datamodule:
   xrds_kw:
     train:
       patch_dims: {time: 15, lat: 256, lon: 256}
-      strides: {time: 1, lat: 100, lon: 100}
+      strides: {time: 1, lat: 196, lon: 154}
       domain_limits: ${domain.train}
-      noise: .1
+      noise: .03
       noise_type: gaussian+uniform
     val:
       patch_dims: {time: 15, lat: 512, lon: 512}
-      strides: {time: 1, lat: 500, lon: 500}
+      strides: {time: 1, lat: 136, lon: 488}
       domain_limits: ${domain.train}
       noise: .03
       noise_type: uniform
@@ -48,6 +48,8 @@ model:
   _target_: contrib.4dvarnet_latent.models.LitUnetFromLit4dVarNetIgnoreNaN
   w_mse: 50.
   w_grad_mse: 1000.
+  w_mse_lr: 0.
+  w_grad_mse_lr: 0
   opt_fn:
     _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
     _partial_: true
@@ -61,7 +63,7 @@ model:
     channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
     interp_mode: bilinear
     activation_layer:
-      _target_: torch.nn.SiLU
+      _target_: torch.nn.ReLU
     #channel_dims: [128, 128, 128, 256, 256, 256, 512, 512, 512, 1024]
 defaults:
   - glo12-sla-base

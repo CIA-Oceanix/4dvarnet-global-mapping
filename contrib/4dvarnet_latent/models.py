@@ -187,6 +187,29 @@ class GradSolverZeroInit(GradSolver):
         )
 
         return state - state_update
+    
+    def forward(self, batch):
+        """
+        Perform the forward pass of the solver.
+
+        Args:
+            batch (dict): Input batch containing data.
+
+        Returns:
+            torch.Tensor: Final optimized state.
+        """
+        with torch.set_grad_enabled(True):
+            state = self.init_state(batch)
+            self.grad_mod.reset_state(batch.input)
+
+            for step in range(self.n_step):
+                state = self.solver_step(state, batch, step=step)
+                if not self.training:
+                    state = state.detach().requires_grad_(True)
+
+            #if not self.training:
+            #    state = self.prior_cost.forward_ae(state)
+        return state
 
 
 class LatentDecoderMR(torch.nn.Module):

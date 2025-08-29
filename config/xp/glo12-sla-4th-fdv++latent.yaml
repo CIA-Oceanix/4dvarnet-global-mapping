@@ -1,8 +1,7 @@
 # @package _global_
-xpname: glo12-sla-4th-fdv++-stride
+xpname: glo12-sla-4th-fdv-latent++
 
-#ckpt: null
-ckpt: 'outputs/2025-08-26/glo12-sla-4th-fdv++-13-23-14/glo12-sla-4th-fdv/checkpoints/best.ckpt'
+ckpt: null
 
 trainer:
   check_val_every_n_epoch: 3
@@ -13,34 +12,48 @@ datamodule:
   xrds_kw:
     train:
       patch_dims: {time: 15, lat: 256, lon: 256}
-      strides: {time: 1, lat: 196, lon: 154}
+      strides: {time: 1, lat: 240, lon: 240}
       domain_limits: ${domain.train}
       noise: .03
     val:
       patch_dims: {time: 15, lat: 512, lon: 512}
-      strides: {time: 1, lat: 136, lon: 488}
+      strides: {time: 1, lat: 500, lon: 500}
       domain_limits: ${domain.train}
       noise: .03
   #dl_kw: {batch_size: 8, num_workers: 4}
   dl_kw: {batch_size: 8, num_workers: 4}
 
 model:
-  _target_: contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN
+  _target_: contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaNLatent
   w_mse: 50.
   w_grad_mse: 1000.
+  w_mse_lr: 50.
+  w_grad_mse_lr: 1000.
   w_prior: 1.
-  w_mse_lr: 0.
-  w_grad_mse_lr: 0
+  w_latent_ae: 1.
   solver:
-    _target_: contrib.4dvarnet_latent.models.GradSolverZeroInit #ocean4dvarnet.models.GradSolver
-    n_step: 10 #10
+    _target_: contrib.4dvarnet_latent.models.GradSolverWithLatent #ocean4dvarnet.models.GradSolver
+    n_step: 10
     lr_grad: 0. #1e3
     std_latent_init: 0.1    
     # lr_grad: 0.2
+    latent_decoder:
+      _target_: contrib.4dvarnet_latent.models.LatentDecoderMR
+      dim_state: ${datamodule.xrds_kw.train.patch_dims.time}
+      dim_latent: 8
+      channel_dims: 16
+      scale_factor: 4
+      interp_mode: 'bilinear'
+    latent_encoder:
+      _target_: contrib.4dvarnet_latent.models.LatentEncoderMR
+      dim_state: ${datamodule.xrds_kw.train.patch_dims.time}
+      dim_latent: ${model.solver.latent_decoder.dim_latent} #8
+      channel_dims: 16
+      scale_factor: ${model.solver.latent_decoder.scale_factor}
     prior_cost:
       _target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
       #_target_: ocean4dvarnet.models.BilinAEPriorCost
-      dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
+      dim_in: 23 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
       dim_hidden: 128 #64
       bilin_quad: false
       # bilin_quad: true
@@ -64,6 +77,9 @@ model:
         channel_dims: [64, 64, 64, 128, 128, 128, 128, 128, 128, 128]   
         dropout: 0.1
         bias: false
+
+
+
 defaults:
   - glo12-sla-4th-unet
   - _self_
