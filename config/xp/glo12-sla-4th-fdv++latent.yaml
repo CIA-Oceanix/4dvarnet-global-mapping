@@ -21,7 +21,7 @@ datamodule:
       domain_limits: ${domain.train}
       noise: .03
   #dl_kw: {batch_size: 8, num_workers: 4}
-  dl_kw: {batch_size: 8, num_workers: 4}
+  dl_kw: {batch_size: 16, num_workers: 4}
 
 model:
   _target_: contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaNLatent
