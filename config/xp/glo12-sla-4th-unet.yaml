@@ -57,16 +57,16 @@ model:
     lr: 1e-4
     T_max: ${trainer.max_epochs}
   solver:
-    #_target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
-    _target_: contrib.4dvarnet_latent.models.UnetSolverBilin
+    _target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
+    #_target_: contrib.4dvarnet_latent.models.UnetSolverBilin
     dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}
-    dropout: 0.1
-    #channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
-    channel_dims: [256, 256, 256, 256, 256, 256, 256, 256, 256, 512]
-    bias: false
-    interp_mode: bilinear
-    activation_layer:
-      _target_: torch.nn.ReLU
+    #dropout: 0.1
+    channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+    #channel_dims: [256, 256, 256, 256, 256, 256, 256, 256, 256, 512]
+    #bias: false
+    #interp_mode: bilinear
+    #activation_layer:
+    #  _target_: torch.nn.ReLU
     #channel_dims: [128, 128, 128, 256, 256, 256, 512, 512, 512, 1024]
 defaults:
   - glo12-sla-base
