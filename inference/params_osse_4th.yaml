@@ -1,0 +1,13 @@
+exp:
+  name: toosse4th
+  input_data: /Odyssey/public/glorys/reanalysis/glorys12_2020_daily_sla_4th_input.nc
+  input_var: sla
+  output_var: sla
+  mask_path: /Odyssey/public/data_challenge_ssh_ose/data/sad/land_mask_1_4_degree.nc
+
+dims:
+  #patch: 15-680-1448
+  #stride: 1-200-200
+  patch: 15-512-512
+  stride: 1-168-312
+  res: .25

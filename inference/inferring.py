@@ -346,7 +346,7 @@ def _run(cfg):
     )
 
     solver = load_from_cfg(cfg["config_path"], key="model")
-    ckpt = torch.load(cfg["checkpoint_path"], weights_only=True)
+    ckpt = torch.load(cfg["checkpoint_path"], weights_only=False) #True)
     solver.load_state_dict(ckpt["state_dict"])
 
     normalisation_type = cfg["normalization_type"]
@@ -398,7 +398,7 @@ def _run(cfg):
             lon=np.arange(
                 patcher.da.lon[0].item(),
                 patcher.da.lon[-1].item() + resolution,
-                resolution,
+                resolution, 
             ),
         ),
         output_dc_format=cfg.get("output_dc_format", False),
@@ -407,8 +407,9 @@ def _run(cfg):
         obs_filtering=cfg.get("obs_filtering", None)
     )
 
-    #litmod.solver.solver.n_step = 15
-    #print('.... number of steps: ', litmod.solver.solver.n_step)
+    #print('.... Number of steps during training: ', litmod.solver.n_steps_val)
+    #litmod.solver.solver.n_steps_val = 10
+    #print('.... New number of steps: ', litmod.solver.n_steps_val)
 
     trainer.predict(litmod, dataloaders=dl)
 

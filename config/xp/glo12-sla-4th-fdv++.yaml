@@ -1,5 +1,5 @@
 # @package _global_
-xpname: glo12-sla-4th-fdv-noise+
+xpname: glo12-sla-4th-fdv++-nonoise
 
 ckpt: null
 #ckpt: 'outputs/2025-08-26/glo12-sla-4th-fdv++-13-23-14/glo12-sla-4th-fdv/checkpoints/best.ckpt'
@@ -16,17 +16,17 @@ datamodule:
       patch_dims: {time: 15, lat: 256, lon: 256}
       strides: {time: 1, lat: 196, lon: 154}
       domain_limits: ${domain.train}
-      noise: .05
+      noise: .0
     val:
       patch_dims: {time: 15, lat: 512, lon: 512}
       strides: {time: 1, lat: 136, lon: 488}
       domain_limits: ${domain.train}
       noise: .03
   #dl_kw: {batch_size: 8, num_workers: 4}
-  dl_kw: {batch_size: 8, num_workers: 4}
+  dl_kw: {batch_size: 4, num_workers: 4}
 
 model:
-  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetTwoSolvers #contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN
+  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN
   w_mse: 50.
   w_grad_mse: 1000.
   w_prior: 1.
@@ -39,22 +39,27 @@ model:
     std_latent_init: 0.1    
     # lr_grad: 0.2
     prior_cost:
-      #_target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
-      _target_: ocean4dvarnet.models.BilinAEPriorCost
+      _target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
       dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
-      dim_hidden: 64 #128 #64
+      dim_hidden: 128 #128 #64
       bilin_quad: false
       # bilin_quad: true
-      downsamp: 2 #4 #null # 4
-      #bias: false
+      downsamp: 4 #4 #null # 4
+      bias: false
     obs_cost:
       _target_: ocean4dvarnet.models.BaseObsCost
     grad_mod:
-      _target_: ocean4dvarnet.models.ConvLstmGradModel #contrib.4dvarnet_latent.models.ConvLstmGradModel #
-      #_target_: contrib.4dvarnet_latent.models.ConvLstmGradModelUnet #contrib.4dvarnet_latent.models.ConvLstmGradModel #
+      _target_: contrib.4dvarnet_latent.models.ConvLstmGradModelUnet #contrib.4dvarnet_latent.models.ConvLstmGradModel #
       dim_in: ${model.solver.prior_cost.dim_in} #${datamodule.xrds_kw.train.patch_dims.time}
-      dim_hidden: 96 # 64 #128 #96
-      #bias: false
+      dim_hidden: 64 #128 #96
+      bias: false
+      unet:
+        _target_: contrib.4dvarnet_latent.models.UnetSolverBilin
+        dim_in: ${model.solver.grad_mod.dim_hidden}
+        dim_out: ${model.solver.prior_cost.dim_in}
+        channel_dims: [64, 64, 64, 128, 128, 128, 128, 128, 128, 128]
+        dropout: 0.1
+        bias: false
       dropout: 0.1
 defaults:
   - glo12-sla-4th-unet

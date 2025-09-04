@@ -1,5 +1,6 @@
 vars:
 - config.yaml:domain,paths
+#- params_osse_4th.yaml:exp,dims
 - params_4th.yaml:exp,dims
 
 stages:

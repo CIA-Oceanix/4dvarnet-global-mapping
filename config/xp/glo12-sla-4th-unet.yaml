@@ -1,5 +1,5 @@
 # @package _global_
-xpname: glo12-sla-4th-unet-interp-silu-stride
+xpname: glo12-sla-4th-unet-noise++
 
 ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
 #ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-noise2-19-24-46/glo12-sla-4th-unet/checkpoints//last.ckpt
@@ -10,7 +10,7 @@ ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/
 trainer:
   check_val_every_n_epoch: 3
   max_epochs: 1000
-  limit_train_batches: 250
+  limit_train_batches: 100 #250
 
 datamodule:  
   input_da:
@@ -35,7 +35,7 @@ datamodule:
       patch_dims: {time: 15, lat: 256, lon: 256}
       strides: {time: 1, lat: 196, lon: 154}
       domain_limits: ${domain.train}
-      noise: .03
+      noise: .1
       noise_type: gaussian+uniform
     val:
       patch_dims: {time: 15, lat: 512, lon: 512}
@@ -43,7 +43,8 @@ datamodule:
       domain_limits: ${domain.train}
       noise: .03
       noise_type: uniform
-  dl_kw: {batch_size: 32, num_workers: 4}
+  #dl_kw: {batch_size: 32, num_workers: 4}
+  dl_kw: {batch_size: 16, num_workers: 4}
 model:
   _target_: contrib.4dvarnet_latent.models.LitUnetFromLit4dVarNetIgnoreNaN
   w_mse: 50.
@@ -59,8 +60,10 @@ model:
     #_target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
     _target_: contrib.4dvarnet_latent.models.UnetSolverBilin
     dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}
-    dropout: 0.
-    channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+    dropout: 0.1
+    #channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+    channel_dims: [256, 256, 256, 256, 256, 256, 256, 256, 256, 512]
+    bias: false
     interp_mode: bilinear
     activation_layer:
       _target_: torch.nn.ReLU

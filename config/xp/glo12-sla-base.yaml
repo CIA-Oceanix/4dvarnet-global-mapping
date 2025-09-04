@@ -91,7 +91,7 @@ model:
 
 entrypoints:
   - _target_: pytorch_lightning.seed_everything
-    seed: 333
+    seed: 333 #111 #
   - _target_: contrib.glorys12.train
     trainer: ${trainer}
     lit_mod: ${model}
