@@ -46,9 +46,9 @@ method:
 # -----------------------------------------------------
 # OSEE-OSE training, 1/4° config
 
-  name: unet-osse-osse-4th-best
-  checkpoint: ../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-07-48-14/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
-  config: ../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-07-48-14/.hydra/config.yaml
+  #name: unet-osse-osse-4th-best
+  #checkpoint: ../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-07-48-14/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-07-48-14/.hydra/config.yaml
 
   #name: unet-osse-osse-4th-small-batches-2016-2018-best
   #checkpoint: ../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-small-batches-2016-2018-10-28-04/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
@@ -143,7 +143,7 @@ method:
 
   #name: fdv-4th-best-nointerp
   #checkpoint: ../outputs/2025-09-01/glo12-sla-4th-fdv-21-45-57/glo12-sla-4th-fdv/checkpoints/best.ckpt
-  #config: ../outputs/2025-09-01/glo12-sla-4th-fdv-21-45-57/.hydra/config.yaml
+  #onfig: ../outputs/2025-09-01/glo12-sla-4th-fdv-21-45-57/.hydra/config.yaml
 
   #name: fdv-4th-noise+-best-nointerp
   #checkpoint: ../outputs/2025-09-01/glo12-sla-4th-fdv-noise+-21-49-54/glo12-sla-4th-fdv/checkpoints/best.ckpt
@@ -156,3 +156,37 @@ method:
   #name: unet+-4th-noise++-best-nointerp
   #checkpoint: ../outputs/2025-09-03/glo12-sla-4th-unet-noise++-23-40-53/glo12-sla-4th-unet/checkpoints/best.ckpt
   #config: ../outputs/2025-09-03/glo12-sla-4th-unet-noise++-23-40-53/.hydra/config.yaml
+
+  #name: fdv++-nonoise-best-nointerp
+  #checkpoint: ../outputs/2025-09-03/glo12-sla-4th-fdv++-nonoise-21-50-18/glo12-sla-4th-fdv++/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-03/glo12-sla-4th-fdv++-nonoise-21-50-18/.hydra/config.yaml
+
+  #name: unet-ose-only-1kepochs-best-nointerp
+  #checkpoint: ../outputs/2025-09-06/glo12-sla-4th-unet-ose-only-2010-2017_1kepochs-16-02-10/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-06/glo12-sla-4th-unet-ose-only-2010-2017_1kepochs-16-02-10/.hydra/config.yaml
+  #checkpoint: ../outputs/2025-09-05/glo12-sla-4th-unet-ose-only-2010-2017-17-25-33/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-05/glo12-sla-4th-unet-ose-only-2010-2017-17-25-33/.hydra/config.yaml
+
+  #name: unet-ose-only-v2-best-nointerp
+  #checkpoint: ../outputs/2025-09-06/glo12-sla-4th-unet-ose-only-v2-2010-2017_1kepochs-11-56-53/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-06/glo12-sla-4th-unet-ose-only-v2-2010-2017_1kepochs-11-56-53/.hydra/config.yaml
+
+  #name: unet-ose-withpostpro-best-nointerp
+  #checkpoint: ../outputs/2025-09-07/glo12-sla-4th-unet-ose-withpostpro-2010-2017-19-37-01/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-07/glo12-sla-4th-unet-ose-withpostpro-2010-2017-19-37-01/.hydra/config.yaml
+
+  #name: unet-ose-withprepro-best-nointerp
+  #checkpoint: ../outputs/2025-09-07/glo12-sla-4th-unet-ose-withprepro-2010-2017-17-37-00/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-07/glo12-sla-4th-unet-ose-withprepro-2010-2017-17-37-00/.hydra/config.yaml
+
+  #name: unet-ose-osse-4th-best-nointerp
+  #checkpoint: ../outputs/2025-09-07/glo12-sla-4th-unet-ose-osse-2010-2017-12-55-44/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-07/glo12-sla-4th-unet-ose-osse-2010-2017-12-55-44/.hydra/config.yaml  
+
+  name: unet-ose-only-withpostpro-4th-best-nointerp
+  checkpoint: ../outputs/2025-09-08/glo12-sla-4th-unet-ose-only-withpostpro-23-35-00/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  config: ../outputs/2025-09-08/glo12-sla-4th-unet-ose-only-withpostpro-23-35-00/.hydra/config.yaml
+
+  #name: unet+-ose-osse-withpostpro-4th-best-nointerp
+  #checkpoint: ../outputs/2025-09-08/glo12-sla-4th-unet+-ose-osse-withpostpro-20-52-48/glo12-sla-4th-unet+-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-08/glo12-sla-4th-unet+-ose-osse-withpostpro-20-52-48/.hydra/config.yaml

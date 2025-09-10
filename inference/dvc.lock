@@ -2,10 +2,10 @@ schema: '2.0'
 stages:
   inference:
     cmd: "python inferring.py +input=/Odyssey/public/data_challenge_ssh_ose/data/alongtrack/gridded_obs_sla_0.25.nc
-      +checkpoint_path=../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-07-48-14/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
-      +config_path=../outputs/2025-08-19/glo12-sla-4th-unet-ose-osse-07-48-14/.hydra/config.yaml
-      +output_path=./output//unet-osse-osse-4th-best-to4th.nc +patch=15-648-1488 +stride=1-200-200
-      +period_from=2018-12-01 +period_to=2020-01-31 +input_var=sla_filtered +output_var=sla
-      +output_geo_uv=false +normalization_type=none +obs_filtering=false +output_dc_format=true
-      +batch_size=1 hydra.run.dir=. hydra.output_subdir=null hydra/job_logging=disabled
-      hydra/hydra_logging=disabled\n"
+      +checkpoint_path=../outputs/2025-09-08/glo12-sla-4th-unet-ose-only-withpostpro-23-35-00/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+      +config_path=../outputs/2025-09-08/glo12-sla-4th-unet-ose-only-withpostpro-23-35-00/.hydra/config.yaml
+      +output_path=./output//unet-ose-only-withpostpro-4th-best-nointerp-to4th.nc
+      +patch=15-648-1488 +stride=1-200-200 +period_from=2018-12-01 +period_to=2020-01-31
+      +input_var=sla_filtered +output_var=sla +output_geo_uv=false +normalization_type=none
+      +obs_filtering=false +output_dc_format=true +batch_size=1 hydra.run.dir=. hydra.output_subdir=null
+      hydra/job_logging=disabled hydra/hydra_logging=disabled\n"

@@ -4,22 +4,24 @@
 #xpname: glo12-sla-4th-unet-ose-only-2010-2017_1kepochs
 #xpname: glo12-sla-4th-unet-ose-ftl3-only-2010-2017_1kepochs
 #xpname: glo12-sla-4th-unet-ose-withprepro-2010-2017
-#xpname: glo12-sla-4th-unet-ose-osse-from-scratch #-withpostpro #-randv2
-#xpname: glo12-sla-4th-fdv++-ose-only-withpostpro #-randv2
-xpname: glo12-sla-4th-unet-ose-osse-nopostpro-2010-2017-from-scratch
+xpname: glo12-sla-4th-fdv-ose-only-withpostpro #-randv2
+#xpname: glo12-sla-4th-unet-osse-only-2010-2017
 
 #ckpt: null 
 #ckpt: 'outputs/2025-09-05/glo12-sla-4th-unet-ose-only-2010-2017-17-25-33/glo12-sla-4th-unet-oseWosse/checkpoints/last.ckpt'
 #ckpt: 'outputs/2025-09-06/glo12-sla-4th-unet-ose-only-2010-2017_1kepochs-16-02-10/glo12-sla-4th-unet-oseWosse/checkpoints/last.ckpt'
 
 # pre-trained models
-ckpt: null #outputs/2025-08-22/glo12-sla-4th-unet-2010-2017-1000epochs-08-21-41/glo12-sla-4th-unet/checkpoints/best.ckpt
-config_path: outputs/2025-08-22/glo12-sla-4th-unet-2010-2017-1000epochs-08-21-41/.hydra/config.yaml
+#ckpt: outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/glo12-sla-4th-fdv/checkpoints/best.ckpt
+#config_path: outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/.hydra/config.yaml
+ckpt: ./outputs/2025-09-01/glo12-sla-4th-fdv-noise+-21-49-54/glo12-sla-4th-fdv/checkpoints/best.ckpt
+config_path: ./outputs/2025-09-01/glo12-sla-4th-fdv-noise+-21-49-54/.hydra/config.yaml
 
 trainer:
   check_val_every_n_epoch: 3
   max_epochs: 1000
-  limit_train_batches: 250 #50 #250
+  limit_train_batches: 50 #250
+  accumulate_grad_batches: 2
 
 datamodule:  
   _target_: contrib.glorys12.DistinctNormDataModuleOSEwOSSE #
@@ -37,7 +39,7 @@ datamodule:
     osse_tgt_var: sla     
   domains:
     train:
-      time: {_target_: builtins.slice, _args_: ['2015-01-01', '2017-12-31']}
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
       #time: {_target_: builtins.slice, _args_: ['2016-06-01', '2018-12-31']}
     val:
       time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-30']}
@@ -49,18 +51,18 @@ datamodule:
       strides: {time: 1, lat: 196, lon: 154}
       domain_limits: ${domain.train}
       noise: .03
-      noise_type: gaussian+uniform
+      noise_type: uniform
       osse_input_type: from-osse
     val:
       patch_dims: {time: 15, lat: 512, lon: 512}
       strides: {time: 1, lat: 136, lon: 488}
       domain_limits: ${domain.train}
       noise: .03
-      noise_type: uniform-constant #gaussian+uniform
+      noise_type: uniform
       osse_input_type: from-osse
   #dl_kw: {batch_size: 32, num_workers: 4}
-  dl_kw: {batch_size: 8, num_workers: 4}
-  #dl_kw: {batch_size: 4, num_workers: 4}
+  #dl_kw: {batch_size: 8, num_workers: 2}
+  dl_kw: {batch_size: 4, num_workers: 4}
   norm_stats:  # norm values from tgt
     train:
     - 0. #m ose
@@ -79,9 +81,9 @@ model:
   w_grad_mse: 1000.
   w_mse_lr: 50.
   w_grad_mse_lr: 1000.
-  w_ose: 1. #0.
+  w_ose: 0. #0.
   w_ose_obs: 1. #0.
-  w_osse: 1. #0.
+  w_osse: 0. #0.
   scale_loss_ose: 4
   frac_random_gaps: 0.001 #0.9
   osse_type: keep-original #noise-from-ose
@@ -91,19 +93,37 @@ model:
   sig_noise_ose2osse: 2.0 #
   patch_normalization: null
   normalization_noise: 0.
-  idx_sensor_for_val_metrics: 11 #alg nadir sensor
   opt_fn:
     #_target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
-    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_unet_with_preposprocessing
+    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_model_with_preposprocessing
     _partial_: true
     freeze_pretrained_model: false #true
     lr: 1e-4
     T_max: ${trainer.max_epochs}
   solver:
-    _target_: contrib.4dvarnet_latent.models.UnetSolver2 #contrib.4dvarnet_latent.models.UnetSolverWithPrepro #ocean4dvarnet.models.GradSolver 
-    dim_in: 15 #15 ${datamodule.xrds_kw.train.patch_dims.time}
-    dim_out: 15
-    channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+    _target_: contrib.4dvarnet_latent.models.GradSolverZeroInit #ocean4dvarnet.models.GradSolver
+    n_step: 15 #10
+    lr_grad: 0. #1e3
+    std_latent_init: 0.1    
+    # lr_grad: 0.2
+    prior_cost:
+      #_target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
+      _target_: ocean4dvarnet.models.BilinAEPriorCost
+      dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
+      dim_hidden: 64 #128 #64
+      bilin_quad: false
+      # bilin_quad: true
+      downsamp: 2 #4 #null # 4
+      #bias: false
+    obs_cost:
+      _target_: ocean4dvarnet.models.BaseObsCost
+    grad_mod:
+      _target_: ocean4dvarnet.models.ConvLstmGradModel #contrib.4dvarnet_latent.models.ConvLstmGradModel #
+      #_target_: contrib.4dvarnet_latent.models.ConvLstmGradModelUnet #contrib.4dvarnet_latent.models.ConvLstmGradModel #
+      dim_in: ${model.solver.prior_cost.dim_in} #${datamodule.xrds_kw.train.patch_dims.time}
+      dim_hidden: 96 # 64 #128 #96
+      #bias: false
+      dropout: 0.1
   pre_pro_model:
     _target_: contrib.4dvarnet_latent.models.PreProcessingModel
     model: null
@@ -114,12 +134,12 @@ model:
     #use_lonlat_in_preprocessing: true
   post_pro_model:
     _target_: contrib.4dvarnet_latent.models.PostProcessingModel
-    model: null
-    #  _target_: contrib.4dvarnet_latent.models.UnetSolver2
-    #  dim_in: 18 #15 ${datamodule.xrds_kw.train.patch_dims.time}
-    #  dim_out: 15
-    #  channel_dims: [32, 32, 32, 64]
-    #use_lonlat_in_preprocessing: true
+    model: #null
+      _target_: contrib.4dvarnet_latent.models.UnetSolver2
+      dim_in: 18 #15 ${datamodule.xrds_kw.train.patch_dims.time}
+      dim_out: 15
+      channel_dims: [32, 32, 32, 64]
+    use_lonlat_in_preprocessing: true
 entrypoints:
   - _target_: pytorch_lightning.seed_everything
     seed: 333 #111 #

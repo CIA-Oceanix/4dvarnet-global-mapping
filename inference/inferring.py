@@ -346,7 +346,7 @@ def _run(cfg):
     )
 
     solver = load_from_cfg(cfg["config_path"], key="model")
-    ckpt = torch.load(cfg["checkpoint_path"], weights_only=False) #True)
+    ckpt = torch.load(cfg["checkpoint_path"], weights_only=True) #False) #
     solver.load_state_dict(ckpt["state_dict"])
 
     normalisation_type = cfg["normalization_type"]
@@ -356,12 +356,12 @@ def _run(cfg):
         cfg.get("mean", patcher.da.mean().item()),
         cfg.get("std", patcher.da.std().item()),
     )
-    #mean = 0.
-    #std  = 0.1
 
     norm_stats = mean, std
 
-    print( norm_stats )
+    print( '... Normalization parameters of the obs dataset ', norm_stats )
+    #norm_stats = 0.04, 0.10
+    #print( '... after reset ', norm_stats )
 
     torch_ds = XrDataset(
         patcher=patcher,

@@ -16,6 +16,7 @@ datamodule:
     inp_path: /SCRATCH/rfablet/Dataset/sla_l3_all_2010_2019_0.125deg_convl4.nc #_float32.nc #sla_l3_all_2010_2019_0.25deg.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input.nc
     inp_var: sla     
     tgt_var: sla
+    
     osse_tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_8th_float32.nc 
     osse_inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_8th_input.nc 
     osse_inp_var: sla     

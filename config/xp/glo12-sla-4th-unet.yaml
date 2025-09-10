@@ -1,5 +1,5 @@
 # @package _global_
-xpname: glo12-sla-4th-unet-noise++
+xpname: glo12-sla-4th-unet-nonoise
 
 ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
 #ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-noise2-19-24-46/glo12-sla-4th-unet/checkpoints//last.ckpt
@@ -10,7 +10,7 @@ ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/
 trainer:
   check_val_every_n_epoch: 3
   max_epochs: 1000
-  limit_train_batches: 100 #250
+  limit_train_batches: 250
 
 datamodule:  
   input_da:
@@ -35,14 +35,14 @@ datamodule:
       patch_dims: {time: 15, lat: 256, lon: 256}
       strides: {time: 1, lat: 196, lon: 154}
       domain_limits: ${domain.train}
-      noise: .1
+      noise: 0.
       noise_type: gaussian+uniform
     val:
       patch_dims: {time: 15, lat: 512, lon: 512}
       strides: {time: 1, lat: 136, lon: 488}
       domain_limits: ${domain.train}
       noise: .03
-      noise_type: uniform
+      noise_type: uniform-constant
   #dl_kw: {batch_size: 32, num_workers: 4}
   dl_kw: {batch_size: 16, num_workers: 4}
 model:

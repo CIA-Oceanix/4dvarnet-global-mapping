@@ -1,12 +1,13 @@
 # @package _global_
-xpname: glo12-sla-4th-fdv-noise+
+xpname: glo12-sla-4th-fdv-2kepochs
 
-ckpt: null
+#ckpt: null
 #ckpt: 'outputs/2025-08-26/glo12-sla-4th-fdv++-13-23-14/glo12-sla-4th-fdv/checkpoints/best.ckpt'
+ckpt: 'outputs/2025-09-01/glo12-sla-4th-fdv-21-45-57/glo12-sla-4th-fdv/checkpoints/last.ckpt'
 
 trainer:
   check_val_every_n_epoch: 3
-  max_epochs: 1000
+  max_epochs: 2000
   limit_train_batches: 50 #250
   accumulate_grad_batches: 2
 
@@ -16,7 +17,7 @@ datamodule:
       patch_dims: {time: 15, lat: 256, lon: 256}
       strides: {time: 1, lat: 196, lon: 154}
       domain_limits: ${domain.train}
-      noise: .05
+      noise: .03
     val:
       patch_dims: {time: 15, lat: 512, lon: 512}
       strides: {time: 1, lat: 136, lon: 488}
@@ -26,7 +27,7 @@ datamodule:
   dl_kw: {batch_size: 8, num_workers: 4}
 
 model:
-  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetTwoSolvers #contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN
+  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN
   w_mse: 50.
   w_grad_mse: 1000.
   w_prior: 1.
