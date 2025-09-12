@@ -15,11 +15,13 @@ datamodule:
       patch_dims: {time: 15, lat: 256, lon: 256}
       strides: {time: 1, lat: 196, lon: 154}
       domain_limits: ${domain.train}
+      noise_type: uniform-constant
       noise: .03
     val:
       patch_dims: {time: 15, lat: 512, lon: 512}
       strides: {time: 1, lat: 136, lon: 488}
       domain_limits: ${domain.train}
+      noise_type: uniform-constant
       noise: .03
   #dl_kw: {batch_size: 8, num_workers: 4}
   dl_kw: {batch_size: 8, num_workers: 4}
@@ -32,7 +34,7 @@ model:
   w_mse_lr: 0.
   w_grad_mse_lr: 0
   solver:
-    _target_: contrib.4dvarnet_latent.models.GradSolverZeroInit #ocean4dvarnet.models.GradSolver
+    _target_: contrib.4dvarnet_latent.models.GradSolverZeroInit_withStep #ocean4dvarnet.models.GradSolver
     n_step: 10 #10
     lr_grad: 0. #1e3
     std_latent_init: 0.1    
@@ -50,20 +52,20 @@ model:
       _target_: ocean4dvarnet.models.BaseObsCost
     grad_mod:
       #_target_: ocean4dvarnet.models.ConvLstmGradModel #contrib.4dvarnet_latent.models.ConvLstmGradModel #
-      _target_: contrib.4dvarnet_latent.models.ConvLstmGradModelUnet #contrib.4dvarnet_latent.models.ConvLstmGradModel #
-      dim_in: ${model.solver.prior_cost.dim_in} #${datamodule.xrds_kw.train.patch_dims.time}
-      dim_hidden: 64 #128 #96
-      bias: false
-      dropout: 0.1
-      unet:
-        #_target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
-        _target_: contrib.4dvarnet_latent.models.UnetSolverBilin
-        dim_in: ${model.solver.grad_mod.dim_hidden}
-        dim_out: ${model.solver.prior_cost.dim_in}
-        #channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]   
-        channel_dims: [64, 64, 64, 128, 128, 128, 128, 128, 128, 128]   
-        dropout: 0.1
-        bias: false
+      _target_: contrib.4dvarnet_latent.models.UnetGradModelUnet #contrib.4dvarnet_latent.models.ConvLstmGradModel #
+      dim_in: ${datamodule.xrds_kw.train.patch_dims.time}
+      embed_dim: 256
+      dim_hidden: 32
+      num_levels: 4  
+      unet: null
+        ##_target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
+        #_target_: contrib.4dvarnet_latent.models.UnetSolverBilin
+        #dim_in: 64
+        #dim_out: ${model.solver.prior_cost.dim_in}
+        ##channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]   
+        #channel_dims: [64, 64, 64, 128, 128, 128, 128, 128, 128, 128]   
+        #dropout: 0.1
+        #bias: false
 defaults:
   - glo12-sla-4th-unet
   - _self_

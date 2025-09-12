@@ -6,12 +6,114 @@ import numpy as np
 import torch
 import kornia.filters as kfilts
 import xarray as xr
+import torch.nn as nn
+import torch.nn.functional as F
+
+#from torchvision.transforms import v2
 
 from ocean4dvarnet.data import BaseDataModule, TrainingItem
 from ocean4dvarnet.models import Lit4dVarNet,GradSolver
 
 TrainingItemOSEwOSSE = namedtuple('TrainingItemOSEwOSSE', ['input', 'tgt','input_osse','tgt_osse','lon','lat'])
+TrainingItemOSEwOSSEwMask = namedtuple('TrainingItemOSEwOSSEwMask', ['input', 'tgt','input_osse','tgt_osse','lon','lat','mask_input_lr'])
+PredictItem = namedtuple("PredictItem", ("input","lon","lat"))
+
 _LAT_TO_RAD = np.pi / 180.0
+
+class ConvLstmGradModel(torch.nn.Module):
+    """
+    A convolutional LSTM model for gradient modulation.
+
+    Attributes:
+        dim_hidden (int): Number of hidden dimensions.
+        gates (nn.Conv2d): Convolutional gates for LSTM.
+        conv_out (nn.Conv2d): Output convolutional layer.
+        dropout (nn.Dropout): Dropout layer.
+        down (nn.Module): Downsampling layer.
+        up (nn.Module): Upsampling layer.
+    """
+
+    def __init__(self, dim_in, dim_hidden, kernel_size=3, dropout=0.1, downsamp=None, bias=False):
+        """
+        Initialize the ConvLstmGradModel.
+
+        Args:
+            dim_in (int): Number of input dimensions.
+            dim_hidden (int): Number of hidden dimensions.
+            kernel_size (int, optional): Kernel size for convolutions. Defaults to 3.
+            dropout (float, optional): Dropout rate. Defaults to 0.1.
+            downsamp (int, optional): Downsampling factor. Defaults to None.
+        """
+        super().__init__()
+        self.dim_hidden = dim_hidden
+        self.gates = torch.nn.Conv2d(
+            dim_in + dim_hidden,
+            4 * dim_hidden,
+            kernel_size=kernel_size,
+            padding=kernel_size // 2,
+            bias=bias,
+        )
+
+        self.conv_out = torch.nn.Conv2d(
+            dim_hidden, dim_in, kernel_size=kernel_size, padding=kernel_size // 2
+        )
+
+        self.dropout = torch.nn.Dropout(dropout)
+        self._state = []
+        self.down = torch.nn.AvgPool2d(downsamp) if downsamp is not None else torch.nn.Identity()
+        self.up = (
+            torch.nn.UpsamplingBilinear2d(scale_factor=downsamp)
+            if downsamp is not None
+            else torch.nn.Identity()
+        )
+
+    def reset_state(self, inp):
+        """
+        Reset the internal state of the LSTM.
+
+        Args:
+            inp (torch.Tensor): Input tensor to determine state size.
+        """
+        size = [inp.shape[0], self.dim_hidden, *inp.shape[-2:]]
+        self._grad_norm = None
+        self._state = [
+            self.down(torch.zeros(size, device=inp.device)),
+            self.down(torch.zeros(size, device=inp.device)),
+        ]
+
+    def forward(self, x):
+        """
+        Perform the forward pass of the LSTM.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor.
+        """
+        if self._grad_norm is None:
+            self._grad_norm = (x**2).mean().sqrt()
+        x = x / self._grad_norm
+        hidden, cell = self._state
+        x = self.dropout(x)
+        x = self.down(x)
+        gates = self.gates(torch.cat((x, hidden), 1))
+
+        in_gate, remember_gate, out_gate, cell_gate = gates.chunk(4, 1)
+
+        in_gate, remember_gate, out_gate = map(
+            torch.sigmoid, [in_gate, remember_gate, out_gate]
+        )
+        cell_gate = torch.tanh(cell_gate)
+
+        cell = (remember_gate * cell) + (in_gate * cell_gate)
+        hidden = out_gate * torch.tanh(cell)
+
+        self._state = hidden, cell
+        out = self.conv_out(hidden)
+        out = self.up(out)
+        return out
+
 
 class ConvLstmGradModelUnet(torch.nn.Module):
     """
@@ -210,7 +312,6 @@ class GradSolverZeroInit(GradSolver):
             #if not self.training:
             #    state = self.prior_cost.forward_ae(state)
         return state
-
 
 class LatentDecoderMR(torch.nn.Module):
     def __init__(self, dim_state, dim_latent, channel_dims,scale_factor,interp_mode='linear',w_dx = None):
@@ -537,6 +638,198 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
 
         return loss, out
 
+def cosanneal_lr_adam_twosolvers(lit_mod, lr, T_max=100, weight_decay=0.):
+    """
+    Configure an Adam optimizer with cosine annealing learning rate scheduling.
+
+    Args:
+        lit_mod: The Lightning module containing the model.
+        lr (float): The base learning rate.
+        T_max (int): Maximum number of iterations for the scheduler.
+        weight_decay (float): Weight decay for the optimizer.
+
+    Returns:
+        dict: A dictionary containing the optimizer and scheduler.
+    """
+    opt = torch.optim.Adam(
+        [
+            {"params": lit_mod.solver.grad_mod.parameters(), "lr": lr},
+            {"params": lit_mod.solver.obs_cost.parameters(), "lr": lr},
+            {"params": lit_mod.solver.prior_cost.parameters(), "lr": lr / 2},
+            {"params": lit_mod.solver2.grad_mod.parameters(), "lr": lr},
+            {"params": lit_mod.solver2.obs_cost.parameters(), "lr": lr},
+            {"params": lit_mod.solver2.prior_cost.parameters(), "lr": lr / 2},
+        ], weight_decay=weight_decay
+    )
+    return {
+        "optimizer": opt,
+        "lr_scheduler": torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt, T_max=T_max
+        ),
+    }
+
+def cosanneal_lr_adam_unet_with_preposprocessing(lit_mod, lr, T_max=100, weight_decay=0., freeze_pretrained_model=False):
+    """
+    Configure an Adam optimizer with cosine annealing learning rate scheduling.
+
+    Args:
+        lit_mod: The Lightning module containing the model.
+        lr (float): The base learning rate.
+        T_max (int): Maximum number of iterations for the scheduler.
+        weight_decay (float): Weight decay for the optimizer.
+
+    Returns:
+        dict: A dictionary containing the optimizer and scheduler.
+    """
+    if freeze_pretrained_model:
+        for param in lit_mod.solver.parameters():
+            param.requires_grad = False
+        lr_solver = 0.
+    else:
+        lr_solver = lr
+
+    opt = torch.optim.Adam(
+        [
+            {"params": lit_mod.solver.parameters(), "lr": lr_solver},
+            {"params": lit_mod.pre_pro_model.parameters(), "lr": lr},
+            {"params": lit_mod.post_pro_model.parameters(), "lr": lr},
+        ], weight_decay=weight_decay
+    )
+    return {
+        "optimizer": opt,
+        "lr_scheduler": torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt, T_max=T_max
+        ),
+    }
+
+
+class Lit4dVarNetTwoSolvers(Lit4dVarNetIgnoreNaN):
+    def __init__(self,
+                 solver2,  
+                 w_mse,w_grad_mse, w_mse_lr, w_grad_mse_lr, w_prior,
+                 scale_solver,
+                 w_solver2=None,
+                 *args, **kwargs):
+
+        super().__init__(w_mse,w_grad_mse, w_mse_lr, w_grad_mse_lr, w_prior,*args, **kwargs)
+
+        self.solver2 = solver2
+        self.scale_solver = scale_solver
+        if w_solver2 is not None:
+            self.w_solver2 = w_solver2
+        else:
+            self.w_solver2 = 0.5
+
+    def loss_mse_lr(self,batch,out,phase,scale=2.):
+        # compute mse losses for average-pooled state
+        m = 1. - torch.isnan( batch.tgt ).float()
+        
+        tgt_lr   = torch.nn.functional.avg_pool2d(batch.tgt,scale)
+        m = torch.nn.functional.avg_pool2d(m.float(),scale)
+        tgt_lr = tgt_lr / (m + 1e-8)    
+        
+        out_lr = torch.nn.functional.avg_pool2d(out,scale)
+
+        wrec = self.get_rec_weight(phase)
+        wrec_lr = torch.nn.functional.avg_pool2d(wrec.view(1,wrec.shape[0],wrec.shape[1],wrec.shape[2]),scale)
+        wrec_lr = wrec_lr.squeeze()
+
+        loss =  self.weighted_mse( m * ( out_lr - tgt_lr) ,
+            wrec_lr,
+        )
+
+        grad_loss =  self.weighted_mse(
+            m * ( kfilts.sobel(out_lr) - kfilts.sobel(tgt_lr) ),
+            wrec_lr,
+        )
+
+        return loss, grad_loss
+
+
+    def step(self, batch, phase):
+        if self.training and batch.tgt.isfinite().float().mean() < 0.5:
+            return None, None
+
+        loss, out1, out2 = self.base_step(batch, phase)
+
+        loss_mse_1 = self.loss_mse_lr(batch,out1,phase,scale=self.scale_solver)
+        loss_prior_1 = self.loss_prior(batch,out1.detach(),phase)
+
+        loss_mse_2 = self.loss_mse(batch,out2,phase)
+        loss_prior_2 = self.loss_prior(batch,out2.detach(),phase)
+
+        training_loss = self.w_mse * loss_mse_1[0] + self.w_grad_mse * loss_mse_1[1]
+        training_loss += self.w_prior * loss_prior_1[0] + self.w_prior * loss_prior_1[1]
+
+        training_loss_2 = self.w_mse * loss_mse_2[0] + self.w_grad_mse * loss_mse_2[1]
+        training_loss_2 += self.w_prior * loss_prior_2[0] + self.w_prior * loss_prior_2[1]
+        training_loss = (1. - self.w_solver2) * training_loss + self.w_solver2 * training_loss_2
+
+        with torch.no_grad():
+            self.log(
+                f"{phase}_mse",
+                10000 * ( (1. - self.w_solver2) * loss_mse_1[0] + self.w_solver2 * loss_mse_2[0]) * self.norm_stats[phase][1] ** 2,
+                prog_bar=True,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+            self.log(
+                f"{phase}_loss",
+                training_loss,
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+
+            self.log(
+                f"{phase}_gloss",
+                (1. - self.w_solver2) * loss_mse_1[1] + self.w_solver2 * loss_mse_2[1],
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+            self.log(
+                f"{phase}_ploss_out",
+                loss_prior_2[0],
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+            self.log(
+                f"{phase}_ploss_gt",
+                loss_prior_2[1],
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+
+        return training_loss, out2
+
+    def base_step(self, batch, phase):
+        
+        # apply first solver 
+        m = 1. - torch.isnan( batch.input ).float()
+        input_lr   = torch.nn.functional.avg_pool2d(batch.input.nan_to_num(),self.scale_solver)
+        m = torch.nn.functional.avg_pool2d(m.float(),self.scale_solver)
+        input_lr = input_lr / (m + 1e-8)  
+        out1 = self.solver(batch= TrainingItem(input_lr.detach(), None))
+        out1 = torch.nn.functional.interpolate(out1,scale_factor=self.scale_solver,mode='bilinear')
+
+        with torch.set_grad_enabled(True):
+             # apply 2nd solver
+            out2 = self.solver2.init_state(None, 1. * out1.detach())
+            out2 = out2.requires_grad_(True)
+
+            self.solver2.grad_mod.reset_state(out2)
+            for step in range(self.solver2.n_step):
+                out2 = self.solver2.solver_step(out2, batch, step=step)
+                if not self.training:
+                    out2 = out2.detach().requires_grad_(True)
+
+        loss = self.weighted_mse(out2 - batch.tgt, self.get_rec_weight(phase))
+
+        return loss, out2, out1
+
 
 # Utils
 # -----
@@ -626,36 +919,6 @@ class Lit4dVarNetIgnoreNaNLatent(Lit4dVarNetIgnoreNaN):
         out, latent = self.solver(batch=batch)
         loss = self.weighted_mse(out - batch.tgt, self.get_rec_weight(phase))
 
-        with torch.no_grad():
-            self.log(
-                f"{phase}_mse",
-                10000 * loss * self.norm_stats[phase][1] ** 2,
-                prog_bar=True,
-                on_step=False,
-                on_epoch=True,  # sync_dist=True,
-            )
-            self.log(
-                f"{phase}_loss",
-                loss,
-                prog_bar=False,
-                on_step=False,
-                on_epoch=True,  # sync_dist=True,
-            )
-
-            if phase == "val":
-                # Log the loss in Gulfstream
-                loss_gf = self.weighted_mse(
-                    out[:, :, 445:485, 420:460].detach().cpu().data
-                    - batch.tgt[:, :, 445:485, 420:460].detach().cpu().data,
-                    np.ones_like(out[:, :, 445:485, 420:460].detach().cpu().data),
-                )
-                self.log(
-                    f"{phase}_loss_gulfstream",
-                    loss_gf,
-                    on_step=False,
-                    on_epoch=True,
-                )
-
         return loss, out, latent
 
     def loss_mse(self,batch,out,phase):
@@ -736,7 +999,26 @@ class Lit4dVarNetIgnoreNaNLatent(Lit4dVarNetIgnoreNaN):
 
         loss_latent_ae = self.loss_latent_ae(batch,out.detach(),phase)
 
+        training_loss = self.w_mse * loss_mse_hr[0] + self.w_grad_mse * loss_mse_hr[1] 
+        training_loss += self.w_mse_lr * loss_mse_lr[0] + self.w_grad_mse_lr * loss_mse_lr[1]
+        training_loss += self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1]
+        training_loss += self.w_latent_ae * loss_latent_ae 
+
         # log
+        self.log(
+            f"{phase}_mse",
+            10000 * loss_mse_hr[0] * self.norm_stats[phase][1] ** 2,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,  # sync_dist=True,
+        )
+        self.log(
+            f"{phase}_loss",
+            training_loss,
+            prog_bar=False,
+            on_step=False,
+            on_epoch=True,  # sync_dist=True,
+        )
         self.log(
             f"{phase}_gloss",
             loss_mse_hr[1],
@@ -773,11 +1055,6 @@ class Lit4dVarNetIgnoreNaNLatent(Lit4dVarNetIgnoreNaN):
             on_epoch=True,  # sync_dist=True,
         )
         
-        training_loss = self.w_mse * loss_mse_hr[0] + self.w_grad_mse * loss_mse_hr[1] 
-        training_loss += self.w_mse_lr * loss_mse_lr[0] + self.w_grad_mse_lr * loss_mse_lr[1]
-        training_loss += self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1]
-        training_loss += self.w_latent_ae * loss_latent_ae 
-
         return training_loss, out
 
 class UnetSolver(torch.nn.Module):
@@ -932,6 +1209,101 @@ class UnetSolver(torch.nn.Module):
             return torch.concat((x, residue), dim=1)
         else:
             return x
+
+
+class BilinAEPriorCostNoBias(torch.nn.Module):
+    """
+    A prior cost model using bilinear autoencoders.
+
+    Attributes:
+        bilin_quad (bool): Whether to use bilinear quadratic terms.
+        conv_in (nn.Conv2d): Convolutional layer for input.
+        conv_hidden (nn.Conv2d): Convolutional layer for hidden states.
+        bilin_1 (nn.Conv2d): Bilinear layer 1.
+        bilin_21 (nn.Conv2d): Bilinear layer 2 (part 1).
+        bilin_22 (nn.Conv2d): Bilinear layer 2 (part 2).
+        conv_out (nn.Conv2d): Convolutional layer for output.
+        down (nn.Module): Downsampling layer.
+        up (nn.Module): Upsampling layer.
+    """
+
+    def __init__(self, dim_in, dim_hidden, kernel_size=3, downsamp=None, bilin_quad=True):
+        """
+        Initialize the BilinAEPriorCost module.
+
+        Args:
+            dim_in (int): Number of input dimensions.
+            dim_hidden (int): Number of hidden dimensions.
+            kernel_size (int, optional): Kernel size for convolutions. Defaults to 3.
+            downsamp (int, optional): Downsampling factor. Defaults to None.
+            bilin_quad (bool, optional): Whether to use bilinear quadratic terms. Defaults to True.
+        """
+        super().__init__()
+        self.bilin_quad = bilin_quad
+        self.conv_in = torch.nn.Conv2d(
+            dim_in, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2
+        )
+        self.conv_hidden = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2 , bias = False
+        )
+
+        self.bilin_1 = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2 , bias = False
+        )
+        self.bilin_21 = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2 , bias = False
+        )
+        self.bilin_22 = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2 , bias = False
+        )
+
+        self.conv_out = torch.nn.Conv2d(
+            2 * dim_hidden, dim_in, kernel_size=kernel_size, padding=kernel_size // 2 , bias = False
+        )
+
+        self.down = torch.nn.AvgPool2d(downsamp) if downsamp is not None else torch.nn.Identity()
+        self.up = (
+            torch.nn.UpsamplingBilinear2d(scale_factor=downsamp)
+            if downsamp is not None
+            else torch.nn.Identity()
+        )
+
+    def forward_ae(self, x):
+        """
+        Perform the forward pass through the autoencoder.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor after passing through the autoencoder.
+        """
+        x = self.down(x)
+        x = self.conv_in(x)
+        x = self.conv_hidden(F.relu(x))
+
+        nonlin = (
+            self.bilin_21(x)**2
+            if self.bilin_quad
+            else (self.bilin_21(x) * self.bilin_22(x))
+        )
+        x = self.conv_out(
+            torch.cat([self.bilin_1(x), nonlin], dim=1)
+        )
+        x = self.up(x)
+        return x
+
+    def forward(self, state):
+        """
+        Compute the prior cost using the autoencoder.
+
+        Args:
+            state (torch.Tensor): The current state tensor.
+
+        Returns:
+            torch.Tensor: The computed prior cost.
+        """
+        return F.mse_loss(state, self.forward_ae(state))
 
 
 class BilinAEPriorCostTwoScale(torch.nn.Module):
@@ -1358,6 +1730,43 @@ def cosanneal_lr_adam_base(lit_mod, lr, T_max=100, weight_decay=0.):
         ),
     }
 
+def cosanneal_lr_adam_model_with_preposprocessing(lit_mod, lr, T_max=100, weight_decay=0., freeze_pretrained_model=False):
+    """
+    Configure an Adam optimizer with cosine annealing learning rate scheduling.
+
+    Args:
+        lit_mod: The Lightning module containing the model.
+        lr (float): The base learning rate.
+        T_max (int): Maximum number of iterations for the scheduler.
+        weight_decay (float): Weight decay for the optimizer.
+
+    Returns:
+        dict: A dictionary containing the optimizer and scheduler.
+    """
+    if freeze_pretrained_model:
+        for param in lit_mod.solver.parameters():
+            param.requires_grad = False
+        lr_solver = 0.
+    else:
+        lr_solver = lr
+
+    opt = torch.optim.Adam(
+        [
+            {"params": lit_mod.solver.grad_mod.parameters(), "lr": lr_solver},
+            {"params": lit_mod.solver.obs_cost.parameters(), "lr": lr_solver},
+            {"params": lit_mod.solver.prior_cost.parameters(), "lr": lr_solver / 2},
+            {"params": lit_mod.pre_pro_model.parameters(), "lr": lr},
+            {"params": lit_mod.post_pro_model.parameters(), "lr": lr},
+        ], weight_decay=weight_decay
+    )
+    return {
+        "optimizer": opt,
+        "lr_scheduler": torch.optim.lr_scheduler.CosineAnnealingLR(
+            opt, T_max=T_max
+        ),
+    }
+
+
 class LitUnetFromLit4dVarNetIgnoreNaN(Lit4dVarNetIgnoreNaN):
     def __init__(self,  
                  *args, **kwargs):
@@ -1603,6 +2012,12 @@ class LitUnetWithLonLat(LitUnetFromLit4dVarNetIgnoreNaN):
 class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
     def __init__(self,  w_ose, w_osse, scale_loss_ose, osse_type, sig_noise_ose2osse, 
                  patch_normalization=None, normalization_noise=0.,
+                 w_ose_obs=0,
+                 frac_random_gaps=0.9,
+                 width_lat_gaps=32, 
+                 width_lon_gaps=4,
+                 width_time_gaps=2,
+                 idx_sensor_for_val_metrics=11,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         
@@ -1614,6 +2029,18 @@ class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
 
         self.patch_normalization = patch_normalization
         self.normalization_noise = normalization_noise
+        self.frac_random_gaps = frac_random_gaps
+        self.w_ose_obs = w_ose_obs
+        self.idx_sensor_for_val_metrics = idx_sensor_for_val_metrics
+
+        self.width_lat_gaps = width_lat_gaps
+        self.width_lon_gaps = width_lon_gaps
+        self.width_time_gaps = width_time_gaps
+        if self.frac_random_gaps <= 0.0 :
+            self.remove_random_gaps = False
+            self.w_ose_obs = 0.
+        else:   
+            self.remove_random_gaps = True
 
 
     def aug_data_with_ose2osse_noise(self,batch,sig_noise_ose2osse=1,osse_type='keep-original'):
@@ -1635,6 +2062,43 @@ class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
                                         batch.lon, batch.lat)
 
         return batch
+
+    def mask_random_gaps_in_batch(self,batch,frac_missing=0.001):
+
+        
+        # randomly remove some observations in the input data
+        frac_missing = ( 1 + 0.25 * ( torch.rand( (batch.input.shape[0] ,1,1,1) , device=batch.input.device ) - 0.5 ) ) * frac_missing
+        frac_missing = frac_missing.view(-1,1,1,1).repeat(1,self.width_time_gaps,batch.input.shape[2],batch.input.shape[3])
+        mask = ( torch.rand( (batch.input.shape[0],self.width_time_gaps,batch.input.shape[2],batch.input.shape[3]) , device=batch.input.device ) > 1. - frac_missing ).float()
+        dt_ = int( (batch.input.shape[1]-self.width_time_gaps)/2 )
+        mask_zeros = torch.zeros( (batch.input.shape[0],dt_,batch.input.shape[2],batch.input.shape[3]) , device=batch.input.device )
+        mask = torch.cat( (mask_zeros, mask, mask_zeros), dim=1)
+
+        mask = torch.nn.functional.avg_pool2d(mask,(self.width_lat_gaps,self.width_lon_gaps))
+        mask = (mask > 0.0).float()
+        mask = torch.nn.functional.interpolate(mask, scale_factor=(self.width_lat_gaps,self.width_lon_gaps), mode='bilinear')
+        mask = (mask > 0.0).float()
+
+        # random rotation (problem with installation of torchvision)
+        #rotater = v2.RandomRotation(degrees=(-10, 10))
+        #mask = rotater(mask)
+
+        input_ose = torch.where( mask == 0., batch.input , float('nan'))
+        tgt_ose = torch.where( mask == 1., batch.input , float('nan'))
+
+        display = True #True
+        if display is not None :
+            print(" ....Percentage of obs pixels", 100.*batch.input.isfinite().float().mean().detach().cpu().numpy(), flush=True)
+            print(" ....Percentage of kept obs pixels", 100.*input_ose.isfinite().float().mean().detach().cpu().numpy(), flush=True)
+            print(" ....Percentage of removed obs pixels", 100.*tgt_ose.isfinite().float().mean().detach().cpu().numpy(), flush=True)
+            print(" ....Intersection of kept and removed obs pixels", 100.*(input_ose.isfinite().float() * tgt_ose.isfinite().float()).mean().detach().cpu().numpy(), flush=True)
+
+        return TrainingItemOSEwOSSE(input_ose,
+                                        tgt_ose,
+                                        None,None,
+                                        batch.lon,
+                                        batch.lat)
+
 
     def apply_patch_normalization(self, batch, phase):
         #patch_normalization = 'from-obs'#None # #'from-gt-ose' # 
@@ -1667,36 +2131,151 @@ class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
             m_new = m_new + m_noise
             s_new = s_new * s_noise
 
-        return TrainingItemOSEwOSSE((batch.input- m_new) / s_new ,
-                                      (batch.tgt - m_new) / s_new,
-                                      None, None,
-                                      batch.lon,
-                                      batch.lat), m_new, s_new
-  
+        if phase == 'test' :
+            return PredictItem((batch.input- m_new) / s_new , 
+                                None,
+                                batch.lon,
+                                batch.lat), m_new, s_new
 
-    def base_step(self, batch, phase):
+            #TrainingItemOSEwOSSE((batch.input- m_new) / s_new ,
+            #                              None,
+            #                              None, None,
+            #                              batch.lon,
+            #                              batch.lat), m_new, s_new
+        else:
+            return TrainingItemOSEwOSSE((batch.input- m_new) / s_new ,
+                                          (batch.tgt - m_new) / s_new,
+                                          None, None,
+                                          batch.lon,
+                                          batch.lat), m_new, s_new
+
+
+    def forward(self, batch):
+        """
+        Forward pass through the solver.
+
+        Args:
+            batch (dict): Input batch.
+
+        Returns:
+            torch.Tensor: first output of the LatentSolver.
+        """
+
+        return self.forward_ose(batch,phase='test') #self.solver(batch)[0]
+    
+    def forward_ose(self, batch,phase):
+        """
+        Forward pass through the solver for OSE data.
+
+        Args:
+            batch (dict): Input batch.
+
+        Returns:
+            torch.Tensor: first output of the LatentSolver.
+        """
+
         # patch-based normalisation for OSE patches
-        batch_,m_new, s_new = self.apply_patch_normalization(batch,phase)
-      
+        if self.patch_normalization is not None :   
+            batch_,m_new, s_new = self.apply_patch_normalization(batch,phase)
+        else:   
+            batch_ = batch
+            m_new, s_new = 0., 1.
+
         # apply solver to ose patches
         out_ose = self.solver(batch_)
         out_ose = (out_ose * s_new) + m_new
 
-        # sampling OSSE input data
-        batch = self.aug_data_with_ose2osse_noise(batch,
-                                                  sig_noise_ose2osse=self.sig_noise_ose2osse,
-                                                  osse_type=self.osse_type)
+        return out_ose
 
-        batch_osse = TrainingItemOSEwOSSE(batch.input_osse,
-                                          batch.tgt_osse,
-                                          None, None,
-                                          batch.lon,
-                                          batch.lat)
+    def remove_randomly_one_sensor(self,batch,phase='train'):
+        display= None #True # True
+
+        # randomly remove available altimetters
+        avail_nadir = torch.sum( batch.mask_input_lr , dim=(1,2,3) ) > 1.
+        if phase == 'train':
+            rand_vals = torch.rand( avail_nadir.shape , device=batch.input.device ) * avail_nadir.float()
+        elif phase == 'val':
+            rand_vals = torch.zeros_like( avail_nadir , device=batch.input.device ).float()
+            rand_vals[:,self.idx_sensor_for_val_metrics] = 1.
+            rand_vals = rand_vals.detach()
+
+        max_rand = torch.max( rand_vals , dim = 1 , keepdim=True).values.repeat(1,avail_nadir.shape[1])
+
+        if False : #True : # 
+            mask = (rand_vals < max_rand).float() * avail_nadir.float()
+            mask = batch.mask_input_lr.float() * mask.view(-1,1,1,1,batch.mask_input_lr.shape[-1]).repeat(1,batch.mask_input_lr.shape[1],batch.mask_input_lr.shape[2],batch.mask_input_lr.shape[3],1)
+            mask = torch.sum( mask , dim = -1 ) > 0.9
+            mask = torch.nn.functional.interpolate(mask.float(),scale_factor=4.,mode='bilinear') >= 0.5
+            mask = 1. - mask.float()
+        else:
+            mask = (rand_vals == max_rand).float() * avail_nadir.float()
+            mask = batch.mask_input_lr.float() * mask.view(-1,1,1,1,batch.mask_input_lr.shape[-1]).repeat(1,batch.mask_input_lr.shape[1],batch.mask_input_lr.shape[2],batch.mask_input_lr.shape[3],1)
+            mask = torch.sum( mask , dim = -1 ) > 0.9
+            mask = torch.nn.functional.interpolate(mask.float(),scale_factor=4.,mode='bilinear') >= 0.5
+            mask = mask.float()
+
+        if display is not None :
+            print('\n...... Selected nadir : ',torch.argmax(rand_vals,dim=1), flush=True)
+
+            print(" ....Percentage of obs lr pixels", 100.*batch.mask_input_lr.float().mean().detach().cpu().numpy(), flush=True)
+            #print(" ....Percentage of kept obs lr pixels", 100.*mask.float().mean().detach().cpu().numpy(), flush=True)
+
+
+        input_ose = torch.where( mask == 0., batch.input , float('nan'))
+        tgt_ose = torch.where( mask == 1., batch.input , float('nan'))
+
+        if display is not None :
+            print(" ....Percentage of obs pixels", 100.*batch.input.isfinite().float().mean().detach().cpu().numpy(), flush=True)
+            print(" ....Percentage of kept obs pixels", 100.*input_ose.isfinite().float().mean().detach().cpu().numpy(), flush=True)
+            print(" ....Percentage of removed obs pixels", 100.*tgt_ose.isfinite().float().mean().detach().cpu().numpy(), flush=True)
+            print(" ....Intersection of kept and removed obs pixels", 100.*(input_ose.isfinite().float() * tgt_ose.isfinite().float()).mean().detach().cpu().numpy(), flush=True)
+
+        return TrainingItemOSEwOSSE(input_ose,
+                                        tgt_ose,
+                                        None,None,
+                                        batch.lon,
+                                        batch.lat)
+    def base_step(self, batch, phase):
+
+        display = None # True #None
+
+        # remove obs data
+        if self.remove_random_gaps :
+            # random gaps (rectangular boxes    )
+            #batch_ = self.mask_random_gaps_in_batch(batch,frac_missing=self.frac_random_gaps)
+
+            # randomly remove available altimetters
+            batch_ = self.remove_randomly_one_sensor(batch,phase)
+        else:
+            batch_  = batch
 
         # apply solver to ose patches
-        out_osse = self.solver(batch_osse)
+        out_ose = self.forward_ose(batch_,phase)
 
-        return out_ose, out_osse, batch_osse
+        return out_ose, batch_ #ose
+
+
+    def base_step_osse(self, batch, phase):
+        # sampling OSSE input data
+        if self.w_osse > 0. :
+            batch_ = self.aug_data_with_ose2osse_noise(batch,
+                                                    sig_noise_ose2osse=self.sig_noise_ose2osse,
+                                                    osse_type=self.osse_type)
+
+            batch_osse = TrainingItemOSEwOSSE(batch_.input_osse,
+                                            batch_.tgt_osse,
+                                            None, None,
+                                            batch.lon,
+                                            batch.lat)
+
+            # apply solver to ose patches
+            out_osse = self.solver(batch_osse)
+        else:
+            out_osse = None
+            batch_osse = None
+
+        return out_osse, batch_osse
+
 
     def loss_mse_lr(self,batch,out,phase,scale=2.):
         # compute mse losses for average-pooled state
@@ -1732,39 +2311,55 @@ class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
             #print('\n ****')
             return None, None
 
-        out_ose, out_osse, batch_osse = self.base_step(batch, phase)
+        # OSE data
+        out_ose, batch_ose = self.base_step(batch, phase)
 
-        # training losses
-        loss_mse_ose = self.loss_mse_lr(batch,out_ose,phase,scale=self.scale_loss_ose)
-        loss_mse_osse = self.loss_mse(batch_osse,out_osse,phase)
+        loss_mse_ose_lr = self.loss_mse_lr(batch,out_ose,phase,scale=self.scale_loss_ose)
+        loss_mse_ose_hr = self.loss_mse(batch_ose,out_ose,phase)
+        loss_mse_ose_hr = loss_mse_ose_hr[0], 0.
 
-        #print('\n')
-        #print('\n')
-        #print(loss_mse_ose[0].detach().cpu().numpy(), loss_mse_ose[1].detach().cpu().numpy(),
-        #      loss_mse_osse[0].detach().cpu().numpy(), loss_mse_osse[1].detach().cpu().numpy(),
-        #      flush=True)
-        #print( torch.sqrt( torch.nanmean( (batch.tgt - batch.input)**2 ) ).detach().cpu().numpy(),
-        #       torch.sqrt( torch.nanmean( (batch.tgt_osse - batch.input_osse)**2 ) ).detach().cpu().numpy(),
-        #       flush=True)
+        #print('.... mse : ', np.sqrt( loss_mse_ose_hr[0].detach().cpu().numpy()))
 
-        training_loss = self.w_ose * ( self.w_mse * loss_mse_ose[0] + self.w_grad_mse * loss_mse_osse[1] )
+        # OSSE data
+        if self.w_osse > 0.:
+            out_osse, batch_osse = self.base_step_osse(batch, phase)
+            loss_mse_osse = self.loss_mse(batch_osse,out_osse,phase)
+        else:
+            out_osse, batch_osse = None, None
+            loss_mse_osse = 0., 0.
+
+        training_loss  = self.w_ose * ( self.w_mse_lr * loss_mse_ose_lr[0] + self.w_grad_mse_lr * loss_mse_ose_lr[1] )
+        training_loss += self.w_ose_obs * ( self.w_mse * loss_mse_ose_hr[0] + self.w_grad_mse * loss_mse_ose_hr[1] )
         training_loss += self.w_osse * ( self.w_mse * loss_mse_osse[0] + self.w_grad_mse * loss_mse_osse[1] )
 
+        #print("loss lr", loss_mse_ose_lr[0].detach().cpu().numpy(),
+        #      "gloss lr", loss_mse_ose_lr[1].detach().cpu().numpy(),
+        #      " loss hr", loss_mse_ose_hr[0].detach().cpu().numpy(),
+        #      " loss osse", loss_mse_osse[0].detach().cpu().numpy(), flush=True)
+
         self.log(
-            f"{phase}_gloss",
-            loss_mse_osse[1],
+            f"{phase}_gloss_lr",
+            loss_mse_ose_lr[1],
             prog_bar=False,
             on_step=False,
             on_epoch=True,  # sync_dist=True,
         )
         self.log(
             f"{phase}_mse",
-            10000 * loss_mse_ose[0] * self.norm_stats[phase][1] ** 2,
+            10000 * loss_mse_ose_hr[0] * self.norm_stats[phase][1] ** 2,
             prog_bar=True,
             on_step=False,
             on_epoch=True,  # sync_dist=True,
             )
         
+        self.log(
+            f"{phase}_mse_lr",
+            10000 * loss_mse_ose_lr[0] * self.norm_stats[phase][1] ** 2,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,  # sync_dist=True,
+            )
+
         self.log(
             f"{phase}_gloss_osse",
             loss_mse_osse[1],
@@ -1774,7 +2369,7 @@ class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
         )
         self.log(
             f"{phase}_mse_osse",
-            10000 * loss_mse_osse[0] * self.norm_stats[phase][1] ** 2,
+            10000 * loss_mse_osse[0] * self.norm_stats[phase][3] ** 2,
             prog_bar=True,
             on_step=False,
             on_epoch=True,  # sync_dist=True,
@@ -1789,6 +2384,116 @@ class LitUnetOSEwOSSE(LitUnetFromLit4dVarNetIgnoreNaN):
         )
 
         return training_loss, out_ose
+
+
+class PreProcessingModel(torch.nn.Module):
+    def __init__(self, model=None,use_lonlat_in_preprocessing=True):
+        super().__init__()
+
+        if model is None:
+            self.model = None
+            self.use_lonlat_in_preprocessing = False
+        else:
+            self.model = model
+            self.use_lonlat_in_preprocessing = use_lonlat_in_preprocessing
+
+    def forward(self, x , z=None):
+        if self.model is not None :
+            if self.use_lonlat_in_preprocessing == True:
+                x_ = torch.cat( (x,z), dim=1)
+            else:
+                x_ = x
+
+            y = x + self.model.predict(x_.nan_to_num())
+
+            return torch.where( x.isfinite(), y, float('nan'))
+        else:
+            return x
+
+class PostProcessingModel(torch.nn.Module):
+    def __init__(self, model=None,use_lonlat_in_preprocessing=True):
+        super().__init__()
+
+        if model is None:
+            self.model = None
+            self.use_lonlat_in_preprocessing = False
+        else:
+            self.model = model
+            self.use_lonlat_in_preprocessing = use_lonlat_in_preprocessing
+
+    def forward(self, x , z=None):
+
+        if self.model is not None :
+            if self.use_lonlat_in_preprocessing == True:
+                x_ = torch.cat( (x,z), dim=1)
+            else:
+                x_ = x
+
+            return self.model.predict(x_)
+        else:
+            return x
+
+
+    
+class LitUnetOSEwOSSEwithPrePostProcessing(LitUnetOSEwOSSE):
+    def __init__(self, 
+                 pre_pro_model, post_pro_model,
+                 w_ose, w_osse, scale_loss_ose, osse_type, sig_noise_ose2osse, 
+                 patch_normalization=None, normalization_noise=0.,
+                 w_ose_obs=0,
+                 frac_random_gaps=0.9,
+                 width_lat_gaps=32, 
+                 width_lon_gaps=4,
+                 width_time_gaps=2,
+                 *args, **kwargs):
+        super().__init__(w_ose, w_osse, scale_loss_ose, osse_type, sig_noise_ose2osse,
+                         patch_normalization, normalization_noise, w_ose_obs,
+                         frac_random_gaps, width_lat_gaps, width_lon_gaps, width_time_gaps, *args, **kwargs)
+
+        self.pre_pro_model = pre_pro_model
+        self.post_pro_model = post_pro_model
+
+    def forward_ose(self, batch,phase):
+        """
+        Forward pass through the solver for OSE data.
+
+        Args:
+            batch (dict): Input batch.
+
+        Returns:
+            torch.Tensor: first output of the LatentSolver.
+        """
+
+        # pre-process lon,lat
+        if self.pre_pro_model.use_lonlat_in_preprocessing == True :
+            lat = _LAT_TO_RAD * batch.lat.view(-1,1,batch.lat.shape[1],1).repeat(1,1,1,batch.input.shape[-1])
+            lon = _LAT_TO_RAD * batch.lon.view(-1,1,1,batch.lon.shape[1]).repeat(1,1,batch.input.shape[2],1)
+
+            z = torch.cat( (torch.cos(lat),torch.cos(lon),torch.sin(lon)),dim=1)
+        else:
+            z = None
+
+        batch_ = TrainingItemOSEwOSSE(self.pre_pro_model(batch.input,z),
+                                      None,
+                                      None, None,
+                                      batch.lon,
+                                      batch.lat)
+
+        # interpolation solver
+        out = super().forward_ose(batch_,phase)
+
+        # post-process model
+        if self.post_pro_model.use_lonlat_in_preprocessing == True :
+            lat = _LAT_TO_RAD * batch.lat.view(-1,1,batch.lat.shape[1],1).repeat(1,1,1,batch.input.shape[-1])
+            lon = _LAT_TO_RAD * batch.lon.view(-1,1,1,batch.lon.shape[1]).repeat(1,1,batch.input.shape[2],1)
+
+            z = torch.cat( (torch.cos(lat),torch.cos(lon),torch.sin(lon)),dim=1)
+        else:
+            z = None
+
+        out_ose = self.post_pro_model(out,z)
+ 
+        return out_ose
 
 class LitUnetSI(LitUnetOSEwOSSE):
     def __init__(self, config_x0, training_mode, w_end_to_end, w_si, n_steps_val, *args, **kwargs):
@@ -1829,7 +2534,7 @@ class LitUnetSI(LitUnetOSEwOSSE):
             
         return xt + self.solver(batch_xt)
 
-    def base_step_end_to_end(self, batch, phase):
+    def base_step_end_to_end(self, batch, phase='val'):
         # sample x0
         x1_hat = self.sample_x0(batch, phase)
 
@@ -1839,8 +2544,8 @@ class LitUnetSI(LitUnetOSEwOSSE):
             time_values = step * torch.ones((x1_hat.size(0),1,x1_hat.size(2),x1_hat.size(3)), device=x1_hat.device)
 
             batch_xt = TrainingItemOSEwOSSE(torch.cat((x1_hat, batch.input.nan_to_num(),time_values), dim=1),
-                                        None,None, None,
-                                        batch.lon, batch.lat)
+                                            None,None, None,
+                                            batch.lon, batch.lat)
             
             x1_hat = x1_hat + step * self.solver(batch_xt)
 
@@ -1910,3 +2615,540 @@ class LitUnetSI(LitUnetOSEwOSSE):
 
         return training_loss, x1_hat
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#####################################################################################################
+
+
+class GradSolverZeroInit_withStep(GradSolver):
+
+
+    def __init__(self, prior_cost, obs_cost, grad_mod, n_step, lr_grad=0.2, lbd=1.0, **kwargs):
+        """
+        Initialize the GradSolver.
+
+        Args:
+            prior_cost (nn.Module): The prior cost function.
+            obs_cost (nn.Module): The observation cost function.
+            grad_mod (nn.Module): The gradient modulation model.
+            n_step (int): Number of optimization steps.
+            lr_grad (float, optional): Learning rate for gradient updates. Defaults to 0.2.
+            lbd (float, optional): Regularization parameter. Defaults to 1.0.
+        """
+        super().__init__(prior_cost, obs_cost, grad_mod, n_step=n_step, lr_grad=lr_grad, lbd=lbd,**kwargs)
+
+        self._grad_norm = None
+
+    def init_state(self, batch, x_init=None):
+        """
+        Initialize the state for optimization.
+
+        Args:
+            batch (dict): Input batch containing data.
+            x_init (torch.Tensor, optional): Initial state. Defaults to None.
+
+        Returns:
+            torch.Tensor: Initialized state.
+        """
+        if x_init is not None:
+            return x_init
+
+        return torch.zeros_like(batch.input).detach().requires_grad_(True)
+
+    def solver_step(self, state, batch, step):
+        """
+        Perform a single optimization step.
+
+        Args:
+            state (torch.Tensor): Current state.
+            batch (dict): Input batch containing data.
+            step (int): Current optimization step.
+
+        Returns:
+            torch.Tensor: Updated state.
+        """
+        var_cost = self.prior_cost(state) + self.lbd**2 * self.obs_cost(state, batch)
+        grad = torch.autograd.grad(var_cost, state, create_graph=True)[0]
+
+        t = torch.tensor([step], device=grad.device).repeat(grad.shape[0])
+        gmod = self.grad_mod(grad, t)
+
+        state_update = (
+             1. / self.n_step * gmod
+            + self.lr_grad * (step + 1) / self.n_step * grad
+        )
+
+        return state - state_update
+    
+    def forward(self, batch):
+        """
+        Perform the forward pass of the solver.
+
+        Args:
+            batch (dict): Input batch containing data.
+
+        Returns:
+            torch.Tensor: Final optimized state.
+        """
+        with torch.set_grad_enabled(True):
+            state = self.init_state(batch)
+            self.grad_mod.reset_state(batch.input)
+
+            for step in range(self.n_step):
+                state = self.solver_step(state, batch, step=step)
+                if not self.training:
+                    state = state.detach().requires_grad_(True)
+
+            #if not self.training:
+            #    state = self.prior_cost.forward_ae(state)
+        return state
+
+
+
+
+
+
+
+
+
+
+### UNET SOLVER
+
+# --- Bloc de base ResNet ---
+class ResBlock(nn.Module):
+    def __init__(self, in_ch, out_ch, embed_dim, dropout=0.0):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_ch, out_ch, 3, padding=1, bias=False)
+        self.gn1 = nn.GroupNorm(max(1, out_ch // 8), out_ch)
+        self.conv2 = nn.Conv2d(out_ch, out_ch, 3, padding=1, bias=False)
+        self.gn2 = nn.GroupNorm(max(1, out_ch // 8), out_ch)
+
+        self.act = lambda x: x * torch.sigmoid(x)  # Swish
+        self.dense = Dense(embed_dim, out_ch)      # time embedding projection
+        self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+
+        # skip 1x1 conv si dimensions changent
+        self.skip = nn.Conv2d(in_ch, out_ch, 1, bias=False) if in_ch != out_ch else nn.Identity()
+
+    def forward(self, x, embed):
+        h = self.conv1(x)
+        h = self.gn1(h)
+        h = self.act(h + self.dense(embed))
+        h = self.dropout(h)
+
+        h = self.conv2(h)
+        h = self.gn2(h)
+        h = self.act(h + self.dense(embed))
+
+        return h + self.skip(x)
+
+
+class GaussianFourierProjection(nn.Module):
+  """Gaussian random features for encoding time steps."""  
+  def __init__(self, embed_dim, scale=30.):
+    super().__init__()
+    # Randomly sample weights during initialization. These weights are fixed 
+    # during optimization and are not trainable.
+    self.W = nn.Parameter(torch.randn(embed_dim // 2) * scale, requires_grad=False)
+
+  def forward(self, x):
+    x_proj = x[:, None] * self.W[None, :] * 2 * np.pi
+    ret = torch.cat([torch.sin(x_proj), torch.cos(x_proj)], dim=-1)
+    return ret
+
+class Dense(nn.Module):
+  """A fully connected layer that reshapes outputs to feature maps."""
+  def __init__(self, input_dim, output_dim):
+    super().__init__()
+    self.dense = nn.Linear(input_dim, output_dim)
+  def forward(self, x):
+    return self.dense(x)[..., None, None]
+
+
+
+class UnetGradModelUnet(nn.Module):
+    """Score-based UNet avec ResNet blocks et time embedding."""
+
+    def __init__(self, dim_in, dim_hidden, embed_dim, num_levels, unet, out_activation=None):
+        super().__init__()
+
+        # progression des canaux
+        channels = [dim_hidden]
+        for i in range(num_levels - 1):
+            channels.append(channels[-1] * 2)
+
+        # time embedding
+        self.embed = nn.Sequential(
+            GaussianFourierProjection(embed_dim=embed_dim),
+            nn.Linear(embed_dim, embed_dim)
+        )
+        self.act = lambda x: x * torch.sigmoid(x)
+        self.norm = torch.nn.Parameter(torch.tensor([1.]))
+
+        # --- Encoding ---
+        self.enc_blocks = nn.ModuleList()
+        in_ch = dim_in
+        for ch in channels:
+            self.enc_blocks.append(ResBlock(in_ch, ch, embed_dim))
+            in_ch = ch
+
+        # --- Bottleneck ---
+        self.bottleneck = ResBlock(channels[-1], channels[-1], embed_dim, dropout=0.1)
+
+        # --- Decoding ---
+        self.dec_blocks = nn.ModuleList()
+        for i in reversed(range(1, len(channels))):
+            self.dec_blocks.append(
+                nn.ModuleDict({
+                    "upsample": nn.ConvTranspose2d(channels[i], channels[i-1], 4, stride=2, padding=1),
+                    "resblock": ResBlock(channels[i-1]*2, channels[i-1], embed_dim)
+                })
+            )
+
+        # --- Final ---
+        if unet is not None:
+            self.conv_out = unet
+            self.use_unet = True
+        else:
+            self.use_unet = False
+            self.conv_out = nn.Conv2d(channels[0]*2, dim_in, 3, padding=1)
+
+
+        # Option activation de sortie
+        if out_activation == "tanh":
+            self.out_act = nn.Tanh()
+        elif out_activation == "sigmoid":
+            self.out_act = nn.Sigmoid()
+        else:
+            self.out_act = nn.Identity()
+
+    def reset_state(self, inp):
+        self._grad_norm = None
+
+    def forward(self, x, t):
+        if self._grad_norm is None:
+            self._grad_norm = (x ** 2).mean().sqrt()
+        x = x / self._grad_norm
+
+        # time embedding 
+        embed = self.act(self.embed(t))
+
+        # --- Encoder ---
+        hs = []
+        h = x
+        for block in self.enc_blocks:
+            h = block(h, embed)
+            hs.append(h)
+            h = F.avg_pool2d(h, 2) if block != self.enc_blocks[-1] else h  # downsample sauf dernier
+
+        # --- Bottleneck ---
+        h = self.bottleneck(h, embed)
+
+        # --- Decoder ---
+        skip_connections = hs[::-1]
+        for skip, dec in zip(skip_connections[1:], self.dec_blocks):  # on garde aussi skip du niveau le + bas
+            h = dec["upsample"](h)
+            h = dec["resblock"](torch.cat([h, skip], dim=1), embed)
+
+        # --- Final ---
+        if self.use_unet == True:
+            out = self.conv_out.predict(torch.cat([h, skip_connections[-1]], dim=1))
+        else:
+            out = self.conv_out(torch.cat([h, skip_connections[-1]], dim=1))
+
+        return self.out_act(out)
+
+
+
+
+
+class Lit4dVarNetOSEwOSSE(Lit4dVarNetIgnoreNaN):
+    def __init__(self,  scale_loss_ose,
+                 patch_normalization=None, normalization_noise=0.,
+                 w_ose_obs=0,
+                 frac_random_gaps=0.9,
+                 width_lat_gaps=32, 
+                 width_lon_gaps=4,
+                 width_time_gaps=2,
+                 idx_sensor_for_val_metrics=11,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+
+        self.scale_loss_ose = scale_loss_ose
+
+        self.patch_normalization = patch_normalization
+        self.normalization_noise = normalization_noise
+        self.frac_random_gaps = frac_random_gaps
+        self.w_ose_obs = w_ose_obs
+        self.idx_sensor_for_val_metrics = idx_sensor_for_val_metrics
+
+        self.width_lat_gaps = width_lat_gaps
+        self.width_lon_gaps = width_lon_gaps
+        self.width_time_gaps = width_time_gaps
+        if self.frac_random_gaps <= 0.0 :
+            self.remove_random_gaps = False
+            self.w_ose_obs = 0.
+        else:   
+            self.remove_random_gaps = True
+    
+
+    def remove_randomly_one_sensor(self,batch,phase='train'):
+        display= None #True # True
+
+        # randomly remove available altimetters
+        avail_nadir = torch.sum( batch.mask_input_lr , dim=(1,2,3) ) > 1.
+        if phase == 'train':
+            rand_vals = torch.rand( avail_nadir.shape , device=batch.input.device ) * avail_nadir.float()
+        elif phase == 'val':
+            rand_vals = torch.zeros_like( avail_nadir , device=batch.input.device ).float()
+            rand_vals[:,self.idx_sensor_for_val_metrics] = 1.
+            rand_vals = rand_vals.detach()
+
+        max_rand = torch.max( rand_vals , dim = 1 , keepdim=True).values.repeat(1,avail_nadir.shape[1])
+
+        if False : #True : # 
+            mask = (rand_vals < max_rand).float() * avail_nadir.float()
+            mask = batch.mask_input_lr.float() * mask.view(-1,1,1,1,batch.mask_input_lr.shape[-1]).repeat(1,batch.mask_input_lr.shape[1],batch.mask_input_lr.shape[2],batch.mask_input_lr.shape[3],1)
+            mask = torch.sum( mask , dim = -1 ) > 0.9
+            mask = torch.nn.functional.interpolate(mask.float(),scale_factor=4.,mode='bilinear') >= 0.5
+            mask = 1. - mask.float()
+        else:
+            mask = (rand_vals == max_rand).float() * avail_nadir.float()
+            mask = batch.mask_input_lr.float() * mask.view(-1,1,1,1,batch.mask_input_lr.shape[-1]).repeat(1,batch.mask_input_lr.shape[1],batch.mask_input_lr.shape[2],batch.mask_input_lr.shape[3],1)
+            mask = torch.sum( mask , dim = -1 ) > 0.9
+            mask = torch.nn.functional.interpolate(mask.float(),scale_factor=4.,mode='bilinear') >= 0.5
+            mask = mask.float()
+
+        if display is not None :
+            print('\n...... Selected nadir : ',torch.argmax(rand_vals,dim=1), flush=True)
+
+            print(" ....Percentage of obs lr pixels", 100.*batch.mask_input_lr.float().mean().detach().cpu().numpy(), flush=True)
+            #print(" ....Percentage of kept obs lr pixels", 100.*mask.float().mean().detach().cpu().numpy(), flush=True)
+
+
+        input_ose = torch.where( mask == 0., batch.input , float('nan'))
+        tgt_ose = torch.where( mask == 1., batch.input , float('nan'))
+
+        if display is not None :
+            print(" ....Percentage of obs pixels", 100.*batch.input.isfinite().float().mean().detach().cpu().numpy(), flush=True)
+            print(" ....Percentage of kept obs pixels", 100.*input_ose.isfinite().float().mean().detach().cpu().numpy(), flush=True)
+            print(" ....Percentage of removed obs pixels", 100.*tgt_ose.isfinite().float().mean().detach().cpu().numpy(), flush=True)
+            print(" ....Intersection of kept and removed obs pixels", 100.*(input_ose.isfinite().float() * tgt_ose.isfinite().float()).mean().detach().cpu().numpy(), flush=True)
+
+        return TrainingItemOSEwOSSE(input_ose,
+                                        tgt_ose,
+                                        batch.input_osse,
+                                        batch.tgt_osse,
+                                        batch.lon,
+                                        batch.lat)
+
+
+
+    def base_step(self, batch, phase):
+        display = None # True #None
+        if self.remove_random_gaps :
+            # randomly remove available altimetters
+            batch_ = self.remove_randomly_one_sensor(batch,phase)
+        else:
+            batch_  = batch
+
+        out = self(batch=batch_)
+
+        return out, batch_
+
+
+
+    def loss_mse_lr(self,batch,out,phase,scale=2.):
+        # compute mse losses for average-pooled state
+        m = 1. - torch.isnan( batch.tgt ).float()
+        
+        tgt_lr   = torch.nn.functional.avg_pool2d(batch.tgt,scale)
+        m = torch.nn.functional.avg_pool2d(m.float(),scale)
+        tgt_lr = tgt_lr / (m + 1e-8)    
+        
+        out_lr = torch.nn.functional.avg_pool2d(out,scale)
+        out_lr = out_lr / (m + 1e-8)    
+
+        wrec = self.get_rec_weight(phase)
+        wrec_lr = torch.nn.functional.avg_pool2d(wrec.view(1,wrec.shape[0],wrec.shape[1],wrec.shape[2]),scale)
+        wrec_lr = wrec_lr.squeeze()
+
+        loss =  self.weighted_mse( m * ( out_lr - tgt_lr) ,
+            wrec_lr,
+        )
+
+        grad_loss =  self.weighted_mse(
+            m * ( kfilts.sobel(out_lr) - kfilts.sobel(tgt_lr) ),
+            wrec_lr,
+        )
+
+        return loss, grad_loss
+
+
+
+
+    def step(self, batch, phase):
+        if self.training and batch.tgt.isfinite().float().mean() < 0.5:
+            return None, None
+
+        out, batch = self.base_step(batch, phase)
+
+        loss_mse_ose_lr = self.loss_mse_lr(batch,out,phase,scale=self.scale_loss_ose)
+        loss_mse_ose_hr = self.loss_mse(batch,out,phase)
+        loss_mse_ose_hr = loss_mse_ose_hr[0], 0.
+        loss_prior = self.loss_prior(batch,out.detach(),phase)
+
+        training_loss = self.w_mse_lr * loss_mse_ose_lr[0] + self.w_grad_mse_lr * loss_mse_ose_lr[1]
+        training_loss +=  self.w_mse * loss_mse_ose_hr[0] + self.w_grad_mse * loss_mse_ose_hr[1]
+        training_loss += self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1]
+
+        with torch.no_grad():
+
+            self.log(
+                f"{phase}_gloss_lr",
+                loss_mse_ose_lr[1],
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+
+            self.log(
+                f"{phase}_mse",
+                10000 * loss_mse_ose_hr[0] * self.norm_stats[phase][1] ** 2,
+                prog_bar=True,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+
+            self.log(
+                f"{phase}_mse_lr",
+                10000 * loss_mse_ose_lr[0] * self.norm_stats[phase][1] ** 2,
+                prog_bar=True,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+                )
+
+            self.log(
+                f"{phase}_loss",
+                training_loss,
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+
+        return training_loss, out
+
+
+
+class UnetSolveroseWosse(UnetSolver2):
+    def __init__(self, dim_in, channel_dims, max_depth=None,dim_out=None,bias=True):
+        super().__init__(dim_in, channel_dims, max_depth)
+
+    def forward(self, x):
+        x = x.nan_to_num()
+        return self.predict(x)    
+
+
+class GradSolverZeroInit_oseWosse(GradSolver):
+
+
+    def __init__(self, prior_cost, obs_cost, grad_mod, n_step, unet,  lr_grad=0.2, lbd=1.0, **kwargs):
+        """
+        Initialize the GradSolver.
+
+        Args:
+            prior_cost (nn.Module): The prior cost function.
+            obs_cost (nn.Module): The observation cost function.
+            grad_mod (nn.Module): The gradient modulation model.
+            n_step (int): Number of optimization steps.
+            lr_grad (float, optional): Learning rate for gradient updates. Defaults to 0.2.
+            lbd (float, optional): Regularization parameter. Defaults to 1.0.
+        """
+        super().__init__(prior_cost, obs_cost, grad_mod, n_step=n_step, lr_grad=lr_grad, lbd=lbd,**kwargs)
+
+        self._grad_norm = None
+        self.unet = unet
+
+    def init_state(self, batch, x_init=None):
+        """
+        Initialize the state for optimization.
+
+        Args:
+            batch (dict): Input batch containing data.
+            x_init (torch.Tensor, optional): Initial state. Defaults to None.
+
+        Returns:
+            torch.Tensor: Initialized state.
+        """
+        if x_init is not None:
+            return x_init
+
+        return torch.zeros_like(batch.input).detach().requires_grad_(True)
+
+    def solver_step(self, state, batch, step):
+        var_cost = self.prior_cost(state) + self.lbd**2 * self.obs_cost(state, batch)
+        grad = torch.autograd.grad(var_cost, state, create_graph=True)[0]
+
+        t = torch.tensor([step], device=grad.device).repeat(grad.shape[0])
+        gmod = self.grad_mod(grad, t)
+
+        state_update = (
+             1. / self.n_step * gmod
+            + self.lr_grad * (step + 1) / self.n_step * grad
+        )
+
+        return state - state_update
+    
+    def forward(self, batch):
+        with torch.set_grad_enabled(True):
+            state = self.init_state(batch)
+            residus = self.init_state(batch)
+            self.grad_mod.reset_state(batch.input)
+            batch_osse = TrainingItemOSEwOSSE(batch.input_osse,
+                                            batch.tgt_osse,
+                                            None, None,
+                                            batch.lon,
+                                            batch.lat)
+            input_ose = batch.input
+            for step in range(self.n_step):
+                state = self.solver_step(state, batch_osse, step=step)
+                diff = input_ose - state
+                residus = self.unet(diff)
+                if not self.training:
+                    state = state.detach().requires_grad_(True)
+                    residus = residus.detach().requires_grad_(True)
+            #if not self.training:
+            #    state = self.prior_cost.forward_ae(state)
+        return state + residus
+
+
+
+
+def cosanneal_lr_adam_oseWosse(lit_mod, lr, T_max=100, weight_decay=0.):
+    opt = torch.optim.Adam(
+        [
+            {"params": lit_mod.solver.grad_mod.parameters(), "lr": lr},
+            {"params": lit_mod.solver.obs_cost.parameters(), "lr": lr},
+            {"params": lit_mod.solver.prior_cost.parameters(), "lr": lr / 2},
+            {"params": lit_mod.solver.unet.parameters(), "lr": lr / 2},
+        ], weight_decay=weight_decay
+    )
+    return {
+        "optimizer": opt,
+        "lr_scheduler": torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=T_max),
+    }

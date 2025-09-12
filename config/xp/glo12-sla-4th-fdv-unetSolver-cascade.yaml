@@ -31,8 +31,13 @@ model:
   w_prior: 1.
   w_mse_lr: 0.
   w_grad_mse_lr: 0
+  opt_fn:
+    _target_: contrib.unet_multi_cascade.cosanneal_lr_adam
+    _partial_: true
+    lr: 1e-4
+    T_max: ${trainer.max_epochs}
   solver:
-    _target_: contrib.4dvarnet_latent.models.GradSolverZeroInit #ocean4dvarnet.models.GradSolver
+    _target_: contrib.unet_multi_cascade.GradSolver_cascade
     n_step: 10 #10
     lr_grad: 0. #1e3
     std_latent_init: 0.1    
@@ -41,29 +46,34 @@ model:
       _target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
       #_target_: ocean4dvarnet.models.BilinAEPriorCost
       dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
-      dim_hidden: 128 #64
+      dim_hidden: 128
+      bilin_quad: false
+      # bilin_quad: true
+      downsamp: 4 #null # 4
+      bias: false
+    prior_cost_low:
+      _target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
+      #_target_: ocean4dvarnet.models.BilinAEPriorCost
+      dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
+      dim_hidden: 64
       bilin_quad: false
       # bilin_quad: true
       downsamp: 4 #null # 4
       bias: false
     obs_cost:
-      _target_: ocean4dvarnet.models.BaseObsCost
+      _target_: contrib.unet_multi_cascade.BaseObsCost
     grad_mod:
-      #_target_: ocean4dvarnet.models.ConvLstmGradModel #contrib.4dvarnet_latent.models.ConvLstmGradModel #
-      _target_: contrib.4dvarnet_latent.models.ConvLstmGradModelUnet #contrib.4dvarnet_latent.models.ConvLstmGradModel #
-      dim_in: ${model.solver.prior_cost.dim_in} #${datamodule.xrds_kw.train.patch_dims.time}
-      dim_hidden: 64 #128 #96
-      bias: false
-      dropout: 0.1
-      unet:
-        #_target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
-        _target_: contrib.4dvarnet_latent.models.UnetSolverBilin
-        dim_in: ${model.solver.grad_mod.dim_hidden}
-        dim_out: ${model.solver.prior_cost.dim_in}
-        #channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]   
-        channel_dims: [64, 64, 64, 128, 128, 128, 128, 128, 128, 128]   
-        dropout: 0.1
-        bias: false
+      _target_: contrib.unet_multi_cascade.UnetGradModel
+      dim_in: ${datamodule.xrds_kw.train.patch_dims.time}
+      embed_dim: 256
+      dim_hidden: 32
+      num_levels: 4   
+    grad_mod_low:
+      _target_: contrib.unet_multi_cascade.UnetGradModel
+      dim_in: ${datamodule.xrds_kw.train.patch_dims.time}
+      embed_dim: 256
+      dim_hidden: 16
+      num_levels: 4 
 defaults:
   - glo12-sla-4th-unet
   - _self_

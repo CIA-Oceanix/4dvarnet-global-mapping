@@ -21,8 +21,8 @@ datamodule:
 #    inp_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input.nc 
 #    tgt_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th.nc
     #inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input_2018-2019.nc     
-    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_float32.nc 
-    inp_path: /SCRATCH/rfablet/Dataset/mask_6nadirs_4th.nc     
+    tgt_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_float32.nc 
+    inp_path: /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/mask_6nadirs_4th.nc     
     inp_var: inp
   domains:
     train:

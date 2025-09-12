@@ -15,12 +15,16 @@ from collections import namedtuple
 from ocean4dvarnet.data import BaseDataModule, TrainingItem
 from ocean4dvarnet.models import Lit4dVarNet
 
+from omegaconf import OmegaConf
+from pathlib import Path
+import hydra
 
 # Exceptions
 # ----------
 
 TrainingItemwithLonLat = namedtuple('TrainingItemwithLonLat', ['input', 'tgt','lon','lat'])
 TrainingItemOSEwOSSE = namedtuple('TrainingItemOSEwOSSE', ['input', 'tgt','input_osse','tgt_osse','lon','lat'])
+TrainingItemOSEwOSSEwMask = namedtuple('TrainingItemOSEwOSSEwMask', ['input', 'tgt','input_osse','tgt_osse','lon','lat','mask_input_lr'])
 
 class NormParamsNotProvided(Exception):
     """Normalisation parameters have not been provided"""
@@ -221,6 +225,8 @@ class DistinctNormDataModuleOSEwOSSE(BaseDataModule):
         self.tgt_da_osse  = self.input_da[2]
         self.inp_da_osse  = self.input_da[3]
 
+        self.inp_mask_lr_da_ose  = self.input_da[4]
+
         self.input_mask = None
 
     def norm_stats(self):
@@ -241,7 +247,7 @@ class DistinctNormDataModuleOSEwOSSE(BaseDataModule):
             ft.reduce,
             lambda i, f: f(i),
             [
-                TrainingItemOSEwOSSE._make,
+                TrainingItemOSEwOSSEwMask._make,
                 lambda item: item._replace(tgt=normalize(item.tgt)),
                 lambda item: item._replace(input=normalize(item.input)),
                 lambda item: item._replace(tgt_osse=normalize_osse(item.tgt_osse)),
@@ -249,14 +255,15 @@ class DistinctNormDataModuleOSEwOSSE(BaseDataModule):
              ],
         )
 
-
     def setup(self, stage="test"):
         print('....... Setup OSEwOSSE dataloader')
         self.train_ds = LazyXrDatasetOSEwOSSE(
             (self.tgt_da_ose.sel(self.domains["train"]),
             self.inp_da_ose.sel(self.domains["train"]),
             self.tgt_da_osse.sel(self.domains["train"]),
-            self.inp_da_osse.sel(self.domains["train"])),
+            self.inp_da_osse.sel(self.domains["train"]),
+            self.inp_mask_lr_da_ose.sel(self.domains["train"]),
+            ),
             **self.xrds_kw["train"],
             postpro_fn=self.post_fn("train"),
             mask=self.input_mask,
@@ -266,7 +273,9 @@ class DistinctNormDataModuleOSEwOSSE(BaseDataModule):
             (self.tgt_da_ose.sel(self.domains["val"]),
             self.inp_da_ose.sel(self.domains["val"]),
             self.tgt_da_osse.sel(self.domains["val"]),
-            self.inp_da_osse.sel(self.domains["val"])),
+            self.inp_da_osse.sel(self.domains["val"]),
+            self.inp_mask_lr_da_ose.sel(self.domains["val"]),
+            ),
             **self.xrds_kw["val"],
             postpro_fn=self.post_fn("val"),
             mask=self.input_mask
@@ -491,6 +500,7 @@ class LazyXrDatasetOSEwOSSE(torch.utils.data.Dataset):
             self.noise_type = 'uniform-constant'
 
         self.mask = kwargs.get("mask")
+        self.remove_random_gaps = kwargs.get("remove_random_gaps", False)
 
     def __len__(self):
         size = 1
@@ -524,18 +534,36 @@ class LazyXrDatasetOSEwOSSE(torch.utils.data.Dataset):
                 self.strides.get(dim, 1) * idx + self.patch_dims[dim],
             )
 
+        # slice for low-res data
+        scale_factor = (( self.ds[4].lat.data[1]- self.ds[4].lat.data[0] ).astype(np.float32) / ( self.ds[0].lat.data[1]- self.ds[0].lat.data[0] ) )
+        
+        if not np.isclose( scale_factor , np.floor(scale_factor) ):
+            print('..... scale factor = ', scale_factor, flush=True)
+            raise ValueError('Low-res and high-res data are not on compatible grids')   
+        scale_factor = np.floor(scale_factor).astype(int)
+
+        sl_lr = {}
+        sl_lr['nadir'] = slice( 0 , 100 )  # all nadir tracks
+        sl_lr['time'] = sl['time']
+        sl_lr['lat']  = slice( sl['lat'].start//4 , sl['lat'].stop//scale_factor )
+        sl_lr['lon']  = slice( sl['lon'].start//4 , sl['lon'].stop//scale_factor )
+
+
         name_data = ("tgt", "inp", "tgt_osse", "inp_osse")
         da = tuple(d.isel(**sl).to_dataset(name=n_).to_array() for d,n_ in zip(self.ds,name_data))
-
-        #print(da,flush=True)
+ 
+        # OSE data
         data_ose_tgt = da[0].data.astype(np.float32).squeeze()
         data_ose_input = da[1].data.astype(np.float32).squeeze()
-
-        data_osse_tgt = da[2].data.astype(np.float32).squeeze()
-        #data_osse_input = da[3].data.astype(np.float32).squeeze()                                    
-
+        if self.ds[4] is not None:
+            da = da + ( self.ds[4].isel(**sl_lr).to_dataset(name="mask_inp_ose_lr").to_array() ,)
+            data_ose_mask_input_lr = da[4].data.astype(np.float32).squeeze()
+            data_ose_mask_input_lr = np.moveaxis(data_ose_mask_input_lr, 0, -1)  # put time axis at the end
+        else:
+            data_ose_mask_input_lr = False
 
         # choose OSSE input data
+        data_osse_tgt = da[2].data.astype(np.float32).squeeze()
         if self.osse_input_type == "from-osse":
             data_osse_input = da[3].data.astype(np.float32).squeeze()                                 
         elif self.osse_input_type == "from-ose":
@@ -543,9 +571,6 @@ class LazyXrDatasetOSEwOSSE(torch.utils.data.Dataset):
             data_osse_input = mask_ose * data_osse_tgt
         else:
             data_osse_input = da[3].data.astype(np.float32).squeeze()
-
-        #print('.....')
-        #print( np.nanmean( np.isnan(data_ose_tgt)) , np.nanmean(np.isnan(data_ose_input)) , np.nanmean(np.isnan(data_osse_tgt)), np.nanmean(np.isnan(data_osse_input)) , flush=True)
 
         if self.noise is not None:
 
@@ -561,12 +586,21 @@ class LazyXrDatasetOSEwOSSE(torch.utils.data.Dataset):
 
                 data_osse_input = data_osse_input + scale * noise
 
-        item = TrainingItemOSEwOSSE(data_ose_input,
-                                    data_ose_tgt,                                    
-                                    data_osse_input,
-                                    data_osse_tgt,
-                                    da[0].coords['lon'].data.astype(np.float32),
-                                    da[0].coords['lat'].data.astype(np.float32))
+        item = TrainingItemOSEwOSSEwMask(data_ose_input,
+                                        data_ose_tgt,                                    
+                                        data_osse_input,
+                                        data_osse_tgt,
+                                        da[0].coords['lon'].data.astype(np.float32),
+                                        da[0].coords['lat'].data.astype(np.float32),
+                                        data_ose_mask_input_lr)
+
+        #item = TrainingItemOSEwOSSE(data_ose_input,
+        #                            data_ose_tgt,                                    
+        #                            data_osse_input,
+        #                            data_osse_tgt,
+        #                            da[0].coords['lon'].data.astype(np.float32),
+        #                            da[0].coords['lat'].data.astype(np.float32),
+        #                            )
 
         
         #print( np.min(da[0].coords['lon'].data.astype(np.float32)),
@@ -881,6 +915,8 @@ def load_oseWosse_data_on_fly_inp(
     inp_var="input",
     osse_tgt_var="sla",
     osse_inp_var="sla",
+    mask_input_lr_path=None,
+    mask_input_lrvar='mask',
 ):
  
     print('..... Start lazy OSEwOSSE loading',flush=True)
@@ -899,7 +935,13 @@ def load_oseWosse_data_on_fly_inp(
     ose_tgt = load_xr_dataset_withlatlontest(tgt_path, tgt_var)
     ose_inp = load_xr_dataset_withlatlontest(inp_path, inp_var)
 
-   # OSSE data
+    if mask_input_lr_path is not None:
+        ose_mask_inp_lr = load_xr_dataset_withlatlontest(mask_input_lr_path, mask_input_lrvar)
+        print(ose_mask_inp_lr,flush=True)
+    else: 
+        ose_mask_inp_lr = None
+   
+    # OSSE data
     osse_tgt = load_xr_dataset_withlatlontest(osse_tgt_path, osse_tgt_var)
     osse_inp = load_xr_dataset_withlatlontest(osse_inp_path, osse_inp_var)
 
@@ -907,7 +949,7 @@ def load_oseWosse_data_on_fly_inp(
     print('..... NB: only the mask of the obs data might be used by the datamodule')
     print(ose_inp,flush=True)
 
-    return ose_tgt, ose_inp, osse_tgt, osse_inp
+    return ose_tgt, ose_inp, osse_tgt, osse_inp, ose_mask_inp_lr
 
 def load_data_on_fly_inp(
     inp_path,
@@ -981,6 +1023,47 @@ def train(trainer, dm, lit_mod, ckpt=None):
     print(" Parameter configurations for lit_mod")
     print(lit_mod.hparams)
     trainer.fit(lit_mod, datamodule=dm, ckpt_path=ckpt)
+
+
+    print(f"Durée d'apprentissage : {time.time() - start:.3} s")
+
+def load_from_cfg(cfg_path, key):
+    """
+    Load configurations from a specified file and instantiate the
+    desired node.
+    """
+    cfg = OmegaConf.load(Path(cfg_path))
+    node = OmegaConf.select(cfg, key)
+    return hydra.utils.call(node)
+
+
+def train_from_pretrained_model(trainer, dm, lit_mod, config_path,ckpt_path=None):
+    if trainer.logger is not None:
+        print()
+        print("Logdir:", trainer.logger.log_dir)
+        print()
+
+    start = time.time()
+    
+    print(" Parameter configurations for lit_mod")
+    print(lit_mod.hparams)
+
+
+    if ckpt_path is not None:
+        print(" Load pretrained config and model from : ", ckpt_path)
+        #lit_mod = lit_mod.load_from_checkpoint(ckpt_path)
+
+        solver = load_from_cfg(config_path, key="model")
+        ckpt = torch.load(ckpt_path, weights_only=True)
+        solver.load_state_dict(ckpt["state_dict"])
+        lit_mod.solver.load_state_dict(solver.solver.state_dict())
+    else:
+        print(" Training from scratch (no pretrained model)", flush=True)
+
+
+    print(lit_mod.hparams)
+
+    trainer.fit(lit_mod, datamodule=dm)
 
 
     print(f"Durée d'apprentissage : {time.time() - start:.3} s")

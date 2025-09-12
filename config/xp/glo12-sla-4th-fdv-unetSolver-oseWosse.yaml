@@ -1,0 +1,106 @@
+# @package _global_
+xpname: glo12-sla-4th-unet-ose-osse
+
+#ckpt: null
+ckpt: null # 'outputs/2025-08-26/glo12-sla-4th-fdv++-13-23-14/glo12-sla-4th-fdv/checkpoints/best.ckpt'
+
+trainer:
+  check_val_every_n_epoch: 3
+  max_epochs: 1000
+  limit_train_batches: 50 #250
+
+datamodule:
+  _target_: contrib.glorys12.DistinctNormDataModuleOSEwOSSE #
+  input_da:
+    _target_: contrib.glorys12.load_oseWosse_data_on_fly_inp
+    tgt_path: /Odyssey/public/duacs/2010_2019/duacs_2010_2019_0.25deg_float32.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th.nc 
+    inp_path: /Odyssey/public/altimetry_traces/2010_2019/gridded_0.25deg/sla_l3_all_2010_2019_0.25deg_convl4_float32.nc #_float32.nc #/SCRATCH/rfablet/Dataset/sla_l3_all_2010_2019_0.25deg_convl4.oldv2.nc #sla_l3_all_2010_2019_0.25deg.nc #/SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input.nc
+    inp_var: sla     
+    tgt_var: sla
+    mask_input_lr_path: /Odyssey/public/altimetry_traces/2010_2019/da_ose_2010_2019_daily_bool_1deg_convl4.nc 
+    mask_input_lrvar: avail
+    osse_tgt_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_float32.nc 
+    osse_inp_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_float32.nc 
+    osse_inp_var: sla     
+    osse_tgt_var: sla     
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-30']}
+    test: null
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, lat: 256, lon: 256}
+      strides: {time: 1, lat: 196, lon: 154}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: uniform-constant
+      osse_input_type: from-osse
+    val:
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 136, lon: 488}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: uniform-constant
+      osse_input_type: from-osse
+  dl_kw: {batch_size: 8, num_workers: 4}
+  norm_stats:  # norm values from tgt
+    train:
+    - 0. #m ose
+    - 0.1  #std ose
+    - -0.001930378327255099 #m osse
+    - 0.08604745118775728  #std osse
+    val:
+    - 0. #m ose
+    - 0.1  #std ose
+    - -0.001930378327255099 #m osse
+    - 0.08604745118775728  #std osse
+
+
+
+model:
+  _target_: contrib.4dvarnet_latent.models.Lit4dVarNetOSEwOSSE  
+  w_mse: 50.
+  w_grad_mse: 1000.
+  scale_loss_ose: 4
+  patch_normalization: none
+  normalization_noise: 0.
+  opt_fn:
+    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_oseWosse
+    _partial_: true
+    lr: 1e-4
+    T_max: ${trainer.max_epochs}
+  solver:
+    _target_: contrib.4dvarnet_latent.models.GradSolverZeroInit_oseWosse ## A CODER
+    n_step: 10 #10
+    lr_grad: 0. #1e3
+    std_latent_init: 0.1    
+    # lr_grad: 0.2
+    prior_cost:
+      _target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
+      #_target_: ocean4dvarnet.models.BilinAEPriorCost
+      dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
+      dim_hidden: 128 #64
+      bilin_quad: false
+      # bilin_quad: true
+      downsamp: 4 #null # 4
+      bias: false
+    obs_cost:
+      _target_: ocean4dvarnet.models.BaseObsCost
+    grad_mod:
+      #_target_: ocean4dvarnet.models.ConvLstmGradModel #contrib.4dvarnet_latent.models.ConvLstmGradModel #
+      _target_: contrib.4dvarnet_latent.models.UnetGradModelUnet #contrib.4dvarnet_latent.models.ConvLstmGradModel #
+      dim_in: ${datamodule.xrds_kw.train.patch_dims.time}
+      embed_dim: 256
+      dim_hidden: 32
+      num_levels: 4  
+      unet: null
+    unet: 
+      _target_: contrib.4dvarnet_latent.models.UnetSolveroseWosse   
+      dim_in: 15 
+      dim_out: 15
+      channel_dims: [32, 32, 32, 64, 64, 64, 128, 128, 128, 256]
+defaults:
+  - glo12-sla-4th-unet
+  - _self_
