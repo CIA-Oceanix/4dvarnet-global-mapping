@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH --partition=Odyssey                       
-#SBATCH --gres=gpu:a100:1                       # a100:1                       
-#SBATCH --job-name=unet+osse-4th                    
+#SBATCH --gres=gpu:h100:1                       # a100:1                       
+#SBATCH --job-name=unet++n3-4th                    
 #SBATCH --output=logs/Test-GPU_%j.log           
 #SBATCH --mem=100G
 #SBATCH --error=logs/err_%A_%a.txt
@@ -30,7 +30,6 @@ cp --update=none /Odyssey/public/altimetry_traces/2010_2019/gridded_0.25deg/sla_
 cp --update=none /Odyssey/public/altimetry_traces/2010_2019/da_ose_2010_2019_daily_bool_1deg_convl4.nc $scrdir/
 
 cd /Odyssey/private/rfablet/Python/4dvarnet-global-mapping
-#srun  python main.py xp=glo12-sla-4th-unet domain=glorys
-#srun python main.py xp=glo12-sla-4th-unet domain=glorys
-srun python main.py xp=glo12-sla-4th-unet-oseWosse domain=glorys
+srun python main.py xp=glo12-sla-4th-unet domain=glorys
+#srun python main.py xp=glo12-sla-4th-unet-oseWosse domain=glorys
 #srun python main.py xp=glo12-sla-4th-unet+-oseWosse domain=glorys

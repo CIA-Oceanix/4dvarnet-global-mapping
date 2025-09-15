@@ -6,12 +6,14 @@ method:
   normalization_type: none #norm_stats_from_patch
   obs_filtering: false #true
   interp_on_mdt_grid: false #true
+  ensemble_mean_from_noise: true
+  std_noise_input: 0.25
 #  name: unet-4th-glo12-sla
 #  checkpoint: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/glo12-sla-4th-unet/checkpoints/best.ckpt
 #  config: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/.hydra/config.yaml
 
 #  name: unet-4th-glo12-sla-with-init
-#  checkpoint: ../outputs/2025-08-12/glo12-sla-4th-unet-with-init-12-52-56/glo12-sla-4th-unet-with-init/checkpoints/best.ckpt
+#  checkpoint: ../outpxuts/2025-08-12/glo12-sla-4th-unet-with-init-12-52-56/glo12-sla-4th-unet-with-init/checkpoints/best.ckpt
 #  config: ../outputs/2025-08-12/glo12-sla-4th-unet-with-init-12-52-56/.hydra/config.yaml
 
 #  name: unet-noise2-4th-glo12-sla-best2
@@ -183,10 +185,62 @@ method:
   #checkpoint: ../outputs/2025-09-07/glo12-sla-4th-unet-ose-osse-2010-2017-12-55-44/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
   #config: ../outputs/2025-09-07/glo12-sla-4th-unet-ose-osse-2010-2017-12-55-44/.hydra/config.yaml  
 
-  name: unet-ose-only-withpostpro-4th-best-nointerp
-  checkpoint: ../outputs/2025-09-08/glo12-sla-4th-unet-ose-only-withpostpro-23-35-00/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
-  config: ../outputs/2025-09-08/glo12-sla-4th-unet-ose-only-withpostpro-23-35-00/.hydra/config.yaml
+  #name: unet-ose-only-withpostpro-4th-best-nointerp
+  #checkpoint: ../outputs/2025-09-08/glo12-sla-4th-unet-ose-only-withpostpro-23-35-00/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-08/glo12-sla-4th-unet-ose-only-withpostpro-23-35-00/.hydra/config.yaml
 
   #name: unet+-ose-osse-withpostpro-4th-best-nointerp
   #checkpoint: ../outputs/2025-09-08/glo12-sla-4th-unet+-ose-osse-withpostpro-20-52-48/glo12-sla-4th-unet+-oseWosse/checkpoints/best.ckpt
   #config: ../outputs/2025-09-08/glo12-sla-4th-unet+-ose-osse-withpostpro-20-52-48/.hydra/config.yaml
+
+  #name: unet-nonoise-valossenoise-4th-nointerp
+  #checkpoint: ../outputs/2025-09-09/glo12-sla-4th-unet-nonoise-16-24-43/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-09/glo12-sla-4th-unet-nonoise-16-24-43/.hydra/config.yaml
+
+  #name: unet-osse-only-2010-2017-from-scratch-4th-nointerp
+  #checkpoint: ../outputs/2025-09-09/glo12-sla-4th-unet-osse-only-2010-2017-from-scratch-21-57-09/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-09/glo12-sla-4th-unet-osse-only-2010-2017-from-scratch-21-57-09/.hydra/config.yaml
+  
+  #name: unet-ose-osse-4th-unet-ose-from-scratch
+  #checkpoint: ../outputs/2025-09-09/glo12-sla-4th-unet-ose-osse-from-scratch-16-41-38/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-09/glo12-sla-4th-unet-ose-osse-from-scratch-16-41-38/.hydra/config.yaml
+
+  #name: unet-ose-osse-4th-unet-ose-osse-nopostpro
+  #checkpoint: ../outputs/2025-09-09/glo12-sla-4th-unet-ose-osse-nopostpro-2010-2017-from-scratch-22-19-02/glo12-sla-4th-unet-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-09/glo12-sla-4th-unet-ose-osse-nopostpro-2010-2017-from-scratch-22-19-02/.hydra/config.yaml
+
+  #name: unet-valmseWnoise-4th
+  #checkpoint: ../outputs/2025-09-10/glo12-sla-4th-unet-valmseWnoise-18-24-52/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-10/glo12-sla-4th-unet-valmseWnoise-18-24-52/.hydra/config.yaml
+
+  #name: unet+-valmseWnoise-4th
+  #checkpoint: ../outputs/2025-09-10/glo12-sla-4th-unet+-valmseWnoise-18-35-22/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-10/glo12-sla-4th-unet+-valmseWnoise-18-35-22/.hydra/config.yaml
+
+  #name: unet-noiseSpR-4th 
+  #checkpoint: ../outputs/2025-09-10/glo12-sla-4th-unet+-noiseSpR-23-20-48/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-10/glo12-sla-4th-unet+-noiseSpR-23-20-48/.hydra/config.yaml
+
+  #name: unet+-noiseSpR-4th
+  #checkpoint: ../outputs/2025-09-10/glo12-sla-4th-unet+-noiseSpR-23-20-07/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-10/glo12-sla-4th-unet+-noiseSpR-23-20-07/.hydra/config.yaml
+
+  #name: unet+-ose-osse-nopostpro-4th
+  #checkpoint: ../outputs/2025-09-10/glo12-sla-4th-unet+-ose-osse-nopostpro-18-29-56/glo12-sla-4th-unet+-oseWosse/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-10/glo12-sla-4th-unet+-ose-osse-nopostpro-18-29-56/.hydra/config.yaml
+
+  #name: unet-noiseSpRv2-4th
+  #checkpoint: ../outputs/2025-09-11/glo12-sla-4th-unet-noiseSpRv2-15-43-19/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-11/glo12-sla-4th-unet-noiseSpRv2-15-43-19/.hydra/config.yaml
+
+  #name: unet+-noiseSpRv2-4th
+  #checkpoint: ../outputs/2025-09-11/glo12-sla-4th-unet+-noiseSpRv2-21-26-55/glo12-sla-4th-unet/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-11/glo12-sla-4th-unet+-noiseSpRv2-21-26-55/.hydra/config.yaml
+
+  name: unet+-ose-osseSpRv2-nopostpro-4th
+  checkpoint: ../outputs/2025-09-11/glo12-sla-4th-unet+-ose-osseSpRv2-nopostpro-21-26-05/glo12-sla-4th-unet+-oseWosse/checkpoints/best.ckpt
+  config: ../outputs/2025-09-11/glo12-sla-4th-unet+-ose-osseSpRv2-nopostpro-21-26-05/.hydra/config.yaml
+
+  #name: fdvunet-4th
+  #checkpoint: ../outputs/2025-09-12/glo12-sla-4th-fdvunet-17-13-07/glo12-sla-4th-fdvunet/checkpoints/best.ckpt
+  #config: ../outputs/2025-09-12/glo12-sla-4th-fdvunet-17-13-07/.hydra/config.yaml

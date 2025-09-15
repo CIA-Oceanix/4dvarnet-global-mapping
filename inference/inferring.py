@@ -39,8 +39,16 @@ class LitModel(pl.LightningModule):
         self.patcher = patcher
         self.solver = model
         self.norm_stats = norm_stats
+
+        self.std_noise_input = kwargs.get("std_noise_input", 0.05)
+        
+        if kwargs.get("ensemble_mean_from_noise",False) == True:
+            save_dir = save_dir.replace('.nc', '-wnoise' + '%.2f' % self.std_noise_input + '.nc')
+            print('... will save to ', save_dir)
+
         self.save_dir = Path(save_dir)
         self.save_dir.parent.mkdir(parents=True, exist_ok=True)
+
         self.out_dims = out_dims
         self.bs = 0
         self.kwargs = kwargs
@@ -60,7 +68,23 @@ class LitModel(pl.LightningModule):
             batch_ = batch
             m_inp, s_inp = 0., 1.
 
-        outputs = self.solver(batch_)
+        if self.kwargs.get("ensemble_mean_from_noise",False) == True:
+            N = 10
+            outputs = 0.
+            #print('... using ensemble mean from noise during inference noise =', sigma_noise )
+            for _ in range(N):
+                noise = torch.randn_like( batch_.input ) * self.std_noise_input # 0.15 0.10 0.05 0.03 0.01 
+                #noise = torch.rand_like( batch_.input ) * 0.05
+                #noise = torch.where( noise > 0.90, torch.nan, 0. ) #0.95
+
+                batch_noisy = PredictItem( batch_.input + noise,
+                                           batch_.lon, 
+                                           batch_.lat )
+                outputs_ = self.solver(batch_noisy)
+                outputs += (1./N) * outputs_
+        
+        else:
+            outputs = self.solver(batch_)
         outputs = outputs * s_inp + m_inp
 
         if False: #self.kwargs.get("obs_filtering") == True : #True :
@@ -404,7 +428,9 @@ def _run(cfg):
         output_dc_format=cfg.get("output_dc_format", False),
         output_geo_uv=cfg.get("output_geo_uv", False),
         normalization_type=cfg.get("normalization_type", None),
-        obs_filtering=cfg.get("obs_filtering", None)
+        obs_filtering=cfg.get("obs_filtering", None),
+        ensemble_mean_from_noise=cfg.get("ensemble_mean_from_noise", False),
+        std_noise_input=cfg.get("std_noise_input", 0.05),
     )
 
     #print('.... Number of steps during training: ', litmod.solver.n_steps_val)

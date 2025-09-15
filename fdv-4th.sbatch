@@ -34,6 +34,9 @@ cd /Odyssey/private/rfablet/Python/4dvarnet-global-mapping
 #srun python main.py xp=glo12-sla-4th-fdv domain=glorys
 #srun python main.py xp=glo12-sla-4th-twofdv domain=glorys
 #srun python main.py xp=glo12-sla-4th-fdv++latent domain=glorys
-#srun python main.py xp=glo12-sla-4th-fdv++ domain=glorys
+srun python main.py xp=glo12-sla-4th-fdv++ domain=glorys
 #srun python main.py xp=glo12-sla-4th-fdv++-oseWosse domain=glorys
-srun python main.py xp=glo12-sla-4th-fdv-oseWosse domain=glorys
+#srun python main.py xp=glo12-sla-4th-fdvunet domain=glorys
+#srun python main.py xp=glo12-sla-4th-fdv-oseWosse domain=glorys
+#srun python main.py xp=glo12-sla-4th-fdvunet-oseWosse domain=glorys
+

@@ -417,6 +417,46 @@ class LazyXrDataset(torch.utils.data.Dataset):
                 M = item[0].shape[2]
                 T = item[0].shape[0]
 
+                # random position in space and time
+                dx = self._rng.uniform(0., 1.0, (T-1,N-1,M-1) ).astype(np.float32)
+                dy = self._rng.uniform(0., 1.0, (T-1,N-1,M-1) ).astype(np.float32)
+                dt = self._rng.uniform(0., 1.0, (T-1,N-1,M-1) ).astype(np.float32)
+
+                d000 = item[1][:-1,:-1,:-1] * (1-dt) * (1-dx) * (1-dy)
+                d001 = item[1][:-1,:-1,1:] * (1-dt) * (1-dx) * dy
+                d010 = item[1][:-1,1:,:-1] * (1-dt) * dx * dy
+                d011 = item[1][:-1,1:,1:] * (1-dt) * dx * (1-dy)
+                d100 = item[1][:-1,:-1,:-1] * dt * (1-dx) * (1-dy)
+                d101 = item[1][1:,:-1,1:] * dt * (1-dx) * dy
+                d110 = item[1][1:,1:,:-1] * dt * dx * (1-dy)
+                d111 = item[1][1:,1:,1:] * dt * dx * dy
+                    
+                noise = np.zeros_like(item[0])
+                if self._rng.uniform(0. , 1., 1) > 0.5 :
+                    noise[:-1,:-1,:-1] = d000 + d001 + d010 + d011 + d100 + d101 + d110 + d111 - item[1][:-1,:-1,:-1]
+                else:
+                    noise[1:,1:,1:] = d000 + d001 + d010 + d011 + d100 + d101 + d110 + d111 - item[1][1:,1:,1:]
+                    
+                noise = np.where( np.isnan(item[0]) , np.nan, noise )
+
+                # adding a white noise
+                scale = self._rng.uniform(0. , self.noise, 1).astype(np.float32)
+                wnoise = scale * self._rng.normal(0., 1. , item[0].shape).astype(np.float32)
+
+                item[0] = item[0] + noise + wnoise
+
+                display = None
+                if display is not None:
+                    print("..... Location uncertainty noise  with white noise %.3f"%self.noise,flush=True)
+                    print("..... mean, std of the simulated spatial perturnation noise : %.3f -- %.3f "%(np.nanmean(noise), np.nanstd(noise)) )
+                    print("..... mean, std of the total noise : %.3f -- %.3f "%(np.nanmean(noise+wnoise), np.nanstd(noise+wnoise)) )
+
+            elif self.noise_type ==  'spatial-perturb-2' :
+                # patch dimensions
+                N = item[0].shape[1]
+                M = item[0].shape[2]
+                T = item[0].shape[0]
+
                 # parameters of the Gaussian Process
                 L = 5.0  # Spatial correlation length
                 T_corr = 20.0  # Temporal correlation length
@@ -564,8 +604,9 @@ class LazyXrDatasetOSEwOSSE(torch.utils.data.Dataset):
 
         # choose OSSE input data
         data_osse_tgt = da[2].data.astype(np.float32).squeeze()
+
         if self.osse_input_type == "from-osse":
-            data_osse_input = da[3].data.astype(np.float32).squeeze()                                 
+            data_osse_input = da[3].data.astype(np.float32).squeeze() 
         elif self.osse_input_type == "from-ose":
             mask_ose = 1. - np.isnan(data_ose_input).astype(np.float32)
             data_osse_input = mask_ose * data_osse_tgt
@@ -585,6 +626,7 @@ class LazyXrDatasetOSEwOSSE(torch.utils.data.Dataset):
                 noise = self._rng.normal(0., 1. , data_osse_input.shape).astype(np.float32)
 
                 data_osse_input = data_osse_input + scale * noise
+
 
         item = TrainingItemOSEwOSSEwMask(data_ose_input,
                                         data_ose_tgt,                                    

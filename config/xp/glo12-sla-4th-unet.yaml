@@ -1,5 +1,5 @@
 # @package _global_
-xpname: glo12-sla-4th-unet-nonoise
+xpname: glo12-sla-4th-unet+-noiseSpRv3
 
 ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
 #ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-noise2-19-24-46/glo12-sla-4th-unet/checkpoints//last.ckpt
@@ -35,14 +35,14 @@ datamodule:
       patch_dims: {time: 15, lat: 256, lon: 256}
       strides: {time: 1, lat: 196, lon: 154}
       domain_limits: ${domain.train}
-      noise: 0.
-      noise_type: gaussian+uniform
+      noise: 0.03
+      noise_type: gaussian+uniform # spatial-perturb # 
     val:
       patch_dims: {time: 15, lat: 512, lon: 512}
       strides: {time: 1, lat: 136, lon: 488}
       domain_limits: ${domain.train}
       noise: .03
-      noise_type: uniform-constant
+      noise_type: uniform-constant #null # #uniform-constant spatial-perturb
   #dl_kw: {batch_size: 32, num_workers: 4}
   dl_kw: {batch_size: 16, num_workers: 4}
 model:
@@ -51,22 +51,23 @@ model:
   w_grad_mse: 1000.
   w_mse_lr: 0.
   w_grad_mse_lr: 0
+  osse_with_interp_error: true
   opt_fn:
     _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
     _partial_: true
     lr: 1e-4
     T_max: ${trainer.max_epochs}
   solver:
-    _target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
-    #_target_: contrib.4dvarnet_latent.models.UnetSolverBilin
+    #_target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
+    _target_: contrib.4dvarnet_latent.models.UnetSolverBilin
     dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}
-    #dropout: 0.1
-    channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
-    #channel_dims: [256, 256, 256, 256, 256, 256, 256, 256, 256, 512]
-    #bias: false
-    #interp_mode: bilinear
-    #activation_layer:
-    #  _target_: torch.nn.ReLU
+    dropout: 0.1
+    #channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
+    channel_dims: [256, 256, 256, 256, 256, 256, 256, 256, 256, 512]
+    bias: false
+    interp_mode: bilinear
+    activation_layer:
+      _target_: torch.nn.ReLU
     #channel_dims: [128, 128, 128, 256, 256, 256, 512, 512, 512, 1024]
 defaults:
   - glo12-sla-base
