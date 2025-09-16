@@ -2,10 +2,10 @@ schema: '2.0'
 stages:
   inference:
     cmd: "python inferring.py +input=/Odyssey/public/data_challenge_ssh_ose/data/alongtrack/gridded_obs_sla_0.25.nc
-      +checkpoint_path=../outputs/2025-09-11/glo12-sla-4th-unet+-ose-osseSpRv2-nopostpro-21-26-05/glo12-sla-4th-unet+-oseWosse/checkpoints/best.ckpt
-      +config_path=../outputs/2025-09-11/glo12-sla-4th-unet+-ose-osseSpRv2-nopostpro-21-26-05/.hydra/config.yaml
-      +output_path=./output//unet+-ose-osseSpRv2-nopostpro-4th-to4th.nc +patch=15-648-1488
-      +stride=1-200-200 +period_from=2018-12-01 +period_to=2020-01-31 +input_var=sla_filtered
-      +output_var=sla +output_geo_uv=false +normalization_type=none +obs_filtering=false
-      +output_dc_format=true +ensemble_mean_from_noise=true +std_noise_input=0.1 +batch_size=1
-      hydra.run.dir=. hydra.output_subdir=null hydra/job_logging=disabled hydra/hydra_logging=disabled\n"
+      +checkpoint_path=../outputs/2025-09-14/glo12-sla-4th-unet+-noiseSpRv2-run2-12-29-41/glo12-sla-4th-unet/checkpoints/best.ckpt
+      +config_path=../outputs/2025-09-14/glo12-sla-4th-unet+-noiseSpRv2-run2-12-29-41/.hydra/config.yaml
+      +output_path=./output//unet+-noiseSpRv2-4th-to4th.nc +patch=15-648-1488 +stride=1-200-200
+      +period_from=2018-12-01 +period_to=2020-01-31 +input_var=sla_filtered +output_var=sla
+      +output_geo_uv=false +normalization_type=none +obs_filtering=false +output_dc_format=true
+      +ensemble_mean_from_noise=true +std_noise_input=0.25 +batch_size=1 hydra.run.dir=.
+      hydra.output_subdir=null hydra/job_logging=disabled hydra/hydra_logging=disabled\n"
