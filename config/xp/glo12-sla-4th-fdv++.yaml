@@ -1,8 +1,12 @@
 # @package _global_
-xpname: glo12-sla-4th-fdv++-noiseSpRv2
+xpname: glo12-sla-4th-fdv++-ft-noiseSpRv2
 
-ckpt: null
+#ckpt: null
 #ckpt: 'outputs/2025-08-26/glo12-sla-4th-fdv++-13-23-14/glo12-sla-4th-fdv/checkpoints/best.ckpt'
+
+ckpt: ./outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/glo12-sla-4th-fdv/checkpoints/best.ckpt
+config_path: ./outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/.hydra/config.yaml
+
 
 trainer:
   check_val_every_n_epoch: 3
@@ -64,6 +68,15 @@ model:
         dropout: 0.1
         bias: false
       dropout: 0.1
+entrypoints:
+  - _target_: pytorch_lightning.seed_everything
+    seed: 333 #111 #
+  - _target_: contrib.glorys12.train_from_pretrained_model
+    trainer: ${trainer}
+    lit_mod: ${model}
+    dm: ${datamodule}
+    config_path: ${config_path}
+    ckpt_path: ${ckpt}
 defaults:
   - glo12-sla-4th-unet
   - _self_

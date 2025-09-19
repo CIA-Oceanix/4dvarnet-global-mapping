@@ -1,11 +1,14 @@
 # @package _global_
-xpname: glo12-sla-4th-unet+-noiseSpRv3
+xpname: glo12-sla-4th-unet+-ft-noiseSpRv3
 
-ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
+#ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
 #ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-noise2-19-24-46/glo12-sla-4th-unet/checkpoints//last.ckpt
 #ckpt: outputs/2025-08-13/glo12-sla-4th-unet-noise2+-07-34-32/glo12-sla-4th-unet/checkpoints/last.ckpt
 #ckpt: outputs/2025-08-20/glo12-sla-4th-unet-2010-2017-19-33-40/glo12-sla-4th-unet/checkpoints/last.ckpt
 #ckpt: outputs/2025-08-22/glo12-sla-4th-unet-2010-2017-1000epochs-08-21-41/glo12-sla-4th-unet/checkpoints/last.ckpt
+
+ckpt: ./outputs/2025-09-10/glo12-sla-4th-unet+-valmseWnoise-18-35-22/glo12-sla-4th-unet/checkpoints/best.ckpt
+config_path: ./outputs/2025-09-10/glo12-sla-4th-unet+-valmseWnoise-18-35-22/.hydra/config.yaml
 
 trainer:
   check_val_every_n_epoch: 3
@@ -69,6 +72,15 @@ model:
     activation_layer:
       _target_: torch.nn.ReLU
     #channel_dims: [128, 128, 128, 256, 256, 256, 512, 512, 512, 1024]
+entrypoints:
+  - _target_: pytorch_lightning.seed_everything
+    seed: 333 #111 #
+  - _target_: contrib.glorys12.train_from_pretrained_model
+    trainer: ${trainer}
+    lit_mod: ${model}
+    dm: ${datamodule}
+    config_path: ${config_path}
+    ckpt_path: ${ckpt}
 defaults:
   - glo12-sla-base
   - _self_
