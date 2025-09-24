@@ -1,15 +1,17 @@
 # @package _global_
+
 xpname: glo12-sla-4th-unet-ose-osse
 
-#ckpt: null
-ckpt: null # 'outputs/2025-08-26/glo12-sla-4th-fdv++-13-23-14/glo12-sla-4th-fdv/checkpoints/best.ckpt'
+# pre-trained models
+ckpt: null
 
 trainer:
   check_val_every_n_epoch: 3
   max_epochs: 1000
   limit_train_batches: 50 #250
 
-datamodule:
+
+datamodule:  
   _target_: contrib.glorys12.DistinctNormDataModuleOSEwOSSE #
   input_da:
     _target_: contrib.glorys12.load_oseWosse_data_on_fly_inp
@@ -22,12 +24,14 @@ datamodule:
     osse_tgt_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_float32.nc 
     osse_inp_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_float32.nc 
     osse_inp_var: sla     
-    osse_tgt_var: sla     
+    osse_tgt_var: sla       
   domains:
     train:
       time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+      #time: {_target_: builtins.slice, _args_: ['2016-06-01', '2018-12-31']}
     val:
       time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-30']}
+      #time: {_target_: builtins.slice, _args_: ['2019-01-01', '2019-12-30']} ## validation on test period
     test: null
   xrds_kw:
     train:
@@ -35,16 +39,18 @@ datamodule:
       strides: {time: 1, lat: 196, lon: 154}
       domain_limits: ${domain.train}
       noise: .03
-      noise_type: uniform-constant
+      noise_type: uniform
       osse_input_type: from-osse
     val:
       patch_dims: {time: 15, lat: 512, lon: 512}
       strides: {time: 1, lat: 136, lon: 488}
       domain_limits: ${domain.train}
       noise: .03
-      noise_type: uniform-constant
+      noise_type: uniform
       osse_input_type: from-osse
-  dl_kw: {batch_size: 8, num_workers: 4}
+  #dl_kw: {batch_size: 32, num_workers: 4}
+  #dl_kw: {batch_size: 8, num_workers: 2}
+  dl_kw: {batch_size: 2, num_workers: 4}
   norm_stats:  # norm values from tgt
     train:
     - 0. #m ose
@@ -56,35 +62,45 @@ datamodule:
     - 0.1  #std ose
     - -0.001930378327255099 #m osse
     - 0.08604745118775728  #std osse
-
-
-
 model:
-  _target_: contrib.4dvarnet_latent.models.Lit4dVarNetOSEwOSSE  
+  #_target_: contrib.4dvarnet_latent.models.LitUnetOSEwOSSE
+  _target_: contrib.4dvarnet_latent.models.LitUnetOSEwOSSEwithPrePostProcessing
   w_mse: 50.
   w_grad_mse: 1000.
+  w_mse_lr: 50.
+  w_grad_mse_lr: 1000.
+  w_ose: 1. #0.
+  w_ose_obs: 1. #0.
+  w_osse: 1. #0.
   scale_loss_ose: 4
-  patch_normalization: none
+  frac_random_gaps: 0.001 #0.9
+  osse_type: keep-original #noise-from-ose
+  width_lat_gaps: 64 #128
+  width_lon_gaps: 4 #8
+  width_time_gaps: 5
+  sig_noise_ose2osse: 2.0 #
+  patch_normalization: null
   normalization_noise: 0.
   opt_fn:
-    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_oseWosse
+    #_target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
+    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_model_with_preposprocessing
     _partial_: true
+    freeze_pretrained_model: false #true
     lr: 1e-4
     T_max: ${trainer.max_epochs}
   solver:
-    _target_: contrib.4dvarnet_latent.models.GradSolverZeroInit_oseWosse ## A CODER
-    n_step: 10 #10
+    _target_: contrib.4dvarnet_latent.models.GradSolverZeroInit_withStep #ocean4dvarnet.models.GradSolver
+    n_step: 15 #10
     lr_grad: 0. #1e3
     std_latent_init: 0.1    
     # lr_grad: 0.2
     prior_cost:
       _target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
-      #_target_: ocean4dvarnet.models.BilinAEPriorCost
       dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
-      dim_hidden: 128 #64
+      dim_hidden: 128 #128 #64
       bilin_quad: false
       # bilin_quad: true
-      downsamp: 4 #null # 4
+      downsamp: 4 #4 #null # 4
       bias: false
     obs_cost:
       _target_: ocean4dvarnet.models.BaseObsCost
@@ -95,12 +111,32 @@ model:
       embed_dim: 256
       dim_hidden: 32
       num_levels: 4  
-      unet: null
-    unet: 
-      _target_: contrib.4dvarnet_latent.models.UnetSolveroseWosse   
-      dim_in: 15 
+      unet:
+        _target_: contrib.4dvarnet_latent.models.UnetSolverBilin
+        dim_in: 64
+        dim_out: ${model.solver.prior_cost.dim_in}
+        channel_dims: [64, 64, 64, 128, 128, 128, 128, 128, 128, 128]
+        dropout: 0.1
+        bias: false
+      #dropout: 0.1
+  pre_pro_model:
+    _target_: contrib.4dvarnet_latent.models.PreProcessingModel
+    model: null
+    #  _target_: contrib.4dvarnet_latent.models.UnetSolver2
+    #  dim_in: 18 #15 ${datamodule.xrds_kw.train.patch_dims.time}
+    #  dim_out: 15
+    #  channel_dims: [32, 32, 32, 64]
+    #use_lonlat_in_preprocessing: true
+  post_pro_model:
+    _target_: contrib.4dvarnet_latent.models.PostProcessingModel
+    model: #null
+      _target_: contrib.4dvarnet_latent.models.UnetSolver2
+      dim_in: 18 #15 ${datamodule.xrds_kw.train.patch_dims.time}
       dim_out: 15
-      channel_dims: [32, 32, 32, 64, 64, 64, 128, 128, 128, 256]
+      channel_dims: [32, 32, 32, 64]
+    use_lonlat_in_preprocessing: true
+
+
 defaults:
-  - glo12-sla-4th-unet
+  - glo12-sla-base
   - _self_

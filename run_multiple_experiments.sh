@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --partition=Odyssey                 # Partition name
 #SBATCH --gres=gpu:1                        # GPU request
-#SBATCH --mem=150G                          # Memory request
+#SBATCH --mem=300G                          # Memory request
 #SBATCH --job-name=fdv-unet              # Job name
 #SBATCH --output=/users/local/path/Test-GPU_%j.log # Standard output and error log (%j for jobid)
 #SBATCH --error=logs/err_%A_%a.txt          # Error log
-#SBATCH --exclude=sl-mee-br-207,sl-mee-br-208   # Exclure certains serveurs
+#SBATCH --exclude=sl-mee-br-207,sl-mee-br-208,sl-mee-br-209   # Exclure certains serveurs
 
 # Variables pour éviter NVML init
 export PYTORCH_NO_NVML=1
@@ -22,5 +22,5 @@ conda activate fdv
 
 cd /Odyssey/private/p25denai/4dvarnet-global-mapping
 
-srun python main.py xp=glo12-sla-4th-fdv-unetSolver
+srun python main.py xp=glo12-sla-4th-fdv-unetSolver-oseWosse
 
