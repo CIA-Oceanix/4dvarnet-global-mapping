@@ -40,3 +40,5 @@ srun python main.py xp=glo12-sla-4th-fdv++ domain=glorys
 #srun python main.py xp=glo12-sla-4th-fdv-oseWosse domain=glorys
 #srun python main.py xp=glo12-sla-4th-fdvunet-oseWosse domain=glorys
 
+#cd inference
+#srun dvc repro

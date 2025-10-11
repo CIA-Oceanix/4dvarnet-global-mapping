@@ -1,8 +1,10 @@
 exp:
   name: to4th
-  #input_data:  /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/gridded_obs_sla_0.25.nc
-  input_data:  /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/gridded_obs_unfiltered_sla_0.25.nc
-  input_var: sla_unfiltered #sla_filtered
+  #input_data:  /Odyssey/public/data_challenge_ssh_ose/data/gridded_alongtrack/sla_filtered_0.25deg.nc
+  input_data:  /Odyssey/public/data_challenge_ssh_ose/data/gridded_alongtrack/sla_filtered_0.25deg_without_lwe.nc
+  input_var: sla_filtered # 
+  #input_data:  /Odyssey/public/data_challenge_ssh_ose/data/gridded_alongtrack/sla_unfiltered_0.25deg.nc
+  #input_var: sla_unfiltered # sla_filtered # 
   output_var: sla
   mask_path: /Odyssey/public/data_challenge_ssh_ose/data/sad/land_mask_1_4_degree.nc
 
