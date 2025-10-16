@@ -64,6 +64,13 @@ class LitModel(pl.LightningModule):
             batch_ = PredictItem( ( batch.input - m_inp ) / s_inp,
                                    batch.lon, 
                                    batch.lat )
+        elif True:
+            lat = _LAT_TO_RAD * batch.lat.view(-1,1,batch.lat.shape[1],1).repeat(1,1,1,batch.input.shape[-1])
+            m_inp = 0.
+            s_inp = 0.9 / torch.cos(lat)
+            batch_ = PredictItem( ( batch.input - m_inp ) / s_inp,
+                                   batch.lon, 
+                                   batch.lat )
         else:
             batch_ = batch
             m_inp, s_inp = 0., 1.

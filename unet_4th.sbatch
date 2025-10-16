@@ -28,8 +28,11 @@ cp --update=none /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/mask_6na
 cp --update=none /Odyssey/public/duacs/2010_2019/duacs_2010_2019_0.25deg_float32.nc $scrdir/
 cp --update=none /Odyssey/public/altimetry_traces/2010_2019/gridded_0.25deg/sla_l3_all_2010_2019_0.25deg_convl4_float32.nc $scrdir/
 cp --update=none /Odyssey/public/altimetry_traces/2010_2019/da_ose_2010_2019_daily_bool_1deg_convl4.nc $scrdir/
+cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc $scrdir/
+cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc $scrdir/
 
 cd /Odyssey/private/rfablet/Python/4dvarnet-global-mapping
-srun python main.py xp=glo12-sla-4th-unet domain=glorys
+#srun python main.py xp=glo12-sla-4th-unet domain=glorys
 #srun python main.py xp=glo12-sla-4th-unet-oseWosse domain=glorys
 #srun python main.py xp=glo12-sla-4th-unet+-oseWosse domain=glorys
+srun python main.py xp=glo12-sla-4th-unet-ossev1 domain=glorys

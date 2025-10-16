@@ -233,7 +233,7 @@ method:
   #config: ../outputs/2025-09-11/glo12-sla-4th-unet-noiseSpRv2-15-43-19/.hydra/config.yaml
 
   # MODEL TO BE TESTED
-  name: unet+-noiseSpRv2-4th-nolwe-filtered-new
+  name: unet+-noiseSpRv2-4th-wlwe-coslat1-filtered-new
   checkpoint: ../outputs/2025-09-11/glo12-sla-4th-unet+-noiseSpRv2-21-26-55/glo12-sla-4th-unet/checkpoints/best.ckpt
   config: ../outputs/2025-09-11/glo12-sla-4th-unet+-noiseSpRv2-21-26-55/.hydra/config.yaml
 

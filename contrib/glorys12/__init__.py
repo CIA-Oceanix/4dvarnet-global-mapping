@@ -1087,8 +1087,8 @@ def train_from_pretrained_model(trainer, dm, lit_mod, config_path,ckpt_path=None
 
     start = time.time()
     
-    print(" Parameter configurations for lit_mod")
-    print(lit_mod.hparams)
+    #print(" Parameter configurations for lit_mod")
+    #print(lit_mod.hparams)
 
 
     if ckpt_path is not None:
@@ -1103,9 +1103,182 @@ def train_from_pretrained_model(trainer, dm, lit_mod, config_path,ckpt_path=None
         print(" Training from scratch (no pretrained model)", flush=True)
 
 
-    print(lit_mod.hparams)
+    #print(lit_mod.hparams)
 
     trainer.fit(lit_mod, datamodule=dm)
 
 
     print(f"Durée d'apprentissage : {time.time() - start:.3} s")
+
+
+class DistinctNormDataModulewInputTracks(BaseDataModule):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.tgt  = self.input_da[0]
+        self.inp  = self.input_da[1]
+        self.input_mask = None
+
+    def norm_stats(self):
+        if self._norm_stats is None:
+            raise NormParamsNotProvided()
+        return self._norm_stats
+
+    def post_fn(self, phase):
+        m, s = self.norm_stats()[phase]
+
+        def normalize(item):
+            return (item - m) / s
+
+        return ft.partial(
+            ft.reduce,
+            lambda i, f: f(i),
+            [
+                TrainingItemwithLonLat._make,
+                lambda item: item._replace(tgt=normalize(item.tgt)),
+                lambda item: item._replace(input=normalize(item.input)),
+             ],
+        )
+
+    def setup(self, stage="test"):
+        print('....... Setup tgt + input tracks dataloader')
+        self.train_ds = LazyXrDatasetwInputTrack(
+            (self.tgt.sel(self.domains["train"]),
+            self.inp.sel(self.domains["train"]),
+            ),
+            **self.xrds_kw["train"],
+            postpro_fn=self.post_fn("train"),
+            mask=self.input_mask,
+        )
+
+        self.val_ds = LazyXrDatasetwInputTrack(
+            (self.tgt.sel(self.domains["val"]),
+            self.inp.sel(self.domains["val"]),
+            ),
+            **self.xrds_kw["val"],
+            postpro_fn=self.post_fn("val"),
+            mask=self.input_mask
+        )
+
+    def val_dataloader(self):
+        return torch.utils.data.DataLoader(
+            self.val_ds,
+            shuffle=False,
+            batch_size=1,
+            num_workers=1,
+        )
+    
+
+
+
+class LazyXrDatasetwInputTrack(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        ds,
+        patch_dims,
+        domain_limits=None,
+        strides=None,
+        postpro_fn=None,
+        noise_type=None,
+        noise=None,
+        noise_spatial_perturb=None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__()
+        self.return_coords = False
+        self.postpro_fn = postpro_fn
+        self.ds = tuple(d.sel(**(domain_limits or {})) for d in ds) 
+        self.patch_dims = patch_dims
+        self.strides = strides or {}
+        _dims = ("variable",) + tuple(k for k in self.ds[0].dims)
+        _shape = (2,) + tuple(self.ds[0][k].shape[0] for k in self.ds[0].dims)
+        ds_dims = dict(zip(_dims, _shape))
+        # ds_dims = dict(zip(self.ds.dims, self.ds.shape))
+        
+
+        self.ds_size = {
+            dim: max(
+                (ds_dims[dim] - patch_dims[dim]) // strides.get(dim, 1) + 1,
+                0,
+            )
+            for dim in patch_dims
+        }
+        self._rng = np.random.default_rng()
+        self.noise = noise
+        self.noise_spatial_perturb = noise_spatial_perturb
+
+        if noise_type is not None:
+            self.noise_type = noise_type
+        else:
+            self.noise_type = 'uniform-constant'
+
+        self.mask = kwargs.get("mask")
+
+        print(self.noise_type,flush=True)
+
+    def __len__(self):
+        size = 1
+        for v in self.ds_size.values():
+            size *= v
+        return size
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
+
+    def get_coords(self):
+        self.return_coords = True
+        coords = []
+        try:
+            for i in range(len(self)):
+                coords.append(self[i])
+        finally:
+            self.return_coords = False
+            return coords
+
+    def __getitem__(self, item):
+        sl = {}
+        _zip = zip(
+            self.ds_size.keys(), np.unravel_index(item, tuple(self.ds_size.values()))
+        )
+
+        for dim, idx in _zip:
+            sl[dim] = slice(
+                self.strides.get(dim, 1) * idx,
+                self.strides.get(dim, 1) * idx + self.patch_dims[dim],
+            )
+
+        name_data = ("tgt", "inp")
+        da = tuple(d.isel(**sl).to_dataset(name=n_).to_array() for d,n_ in zip(self.ds,name_data))
+
+        data_tgt = da[0].data.astype(np.float32).squeeze()
+        data_input = da[1].data.astype(np.float32).squeeze()
+
+        #print('\n .....',flush=True)
+        #print('.... regridding noise: %.3f'%np.sqrt(np.nanmean(  (data_input-data_tgt)**2 )),flush=True)
+
+
+        if self.return_coords:
+            return da[0].coords.to_dataset()[list(self.patch_dims)]
+
+        if self.noise is not None:
+
+            if self.noise_type ==  'uniform-constant' :
+                noise =  self._rng.uniform(-self.noise, self.noise, data_input.shape).astype(np.float32)
+                data_input = data_input + noise
+            elif self.noise_type ==  'gaussian+uniform' :
+                scale = self._rng.uniform(0. , self.noise, 1).astype(np.float32)
+                noise = self._rng.normal(0., 1. , data_input.shape).astype(np.float32)
+                data_input = data_input + scale * noise
+
+        #print('.... total noise: %.3f'%np.sqrt(np.nanmean(  (data_input-data_tgt)**2 )),flush=True)
+
+        item = TrainingItemwithLonLat(data_input,
+                                        data_tgt,                                    
+                                        da[0].coords['lon'].data.astype(np.float32),
+                                        da[0].coords['lat'].data.astype(np.float32))
+        
+        if self.postpro_fn is not None:
+            return self.postpro_fn(item)
+        return item

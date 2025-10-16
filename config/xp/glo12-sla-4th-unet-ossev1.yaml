@@ -1,5 +1,5 @@
 # @package _global_
-xpname: glo12-sla-4th-unet+-ft-noiseSpRv3
+xpname: glo12-sla-4th-unet+-ossev1
 
 #ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
 #ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-noise2-19-24-46/glo12-sla-4th-unet/checkpoints//last.ckpt
@@ -7,7 +7,7 @@ xpname: glo12-sla-4th-unet+-ft-noiseSpRv3
 #ckpt: outputs/2025-08-20/glo12-sla-4th-unet-2010-2017-19-33-40/glo12-sla-4th-unet/checkpoints/last.ckpt
 #ckpt: outputs/2025-08-22/glo12-sla-4th-unet-2010-2017-1000epochs-08-21-41/glo12-sla-4th-unet/checkpoints/last.ckpt
 
-ckpt: ./outputs/2025-09-10/glo12-sla-4th-unet+-valmseWnoise-18-35-22/glo12-sla-4th-unet/checkpoints/best.ckpt
+ckpt: null #./outputs/2025-09-10/glo12-sla-4th-unet+-valmseWnoise-18-35-22/glo12-sla-4th-unet/checkpoints/best.ckpt
 config_path: ./outputs/2025-09-10/glo12-sla-4th-unet+-valmseWnoise-18-35-22/.hydra/config.yaml
 
 trainer:
@@ -16,12 +16,12 @@ trainer:
   limit_train_batches: 250
 
 datamodule:  
+  _target_: contrib.glorys12.DistinctNormDataModulewInputTracks
   input_da:
-#    _target_: contrib.glorys12.load_glorys12_data
     _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
-    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_float32.nc 
-    inp_path: /SCRATCH/rfablet/Dataset/mask_6nadirs_4th.nc         
-    inp_var: inp
+    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc
+    inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc
+    inp_var: sla
   domains:
     train:
       time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
@@ -49,7 +49,7 @@ model:
   w_grad_mse: 1000.
   w_mse_lr: 0.
   w_grad_mse_lr: 0
-  osse_with_interp_error: true
+  osse_with_interp_error: false #true
   opt_fn:
     _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
     _partial_: true
