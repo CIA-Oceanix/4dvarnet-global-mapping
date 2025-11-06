@@ -1,0 +1,99 @@
+# @package _global_
+xpname: glo12-sla-4th-fdvunet15M-ossev1-noiseg+u03
+
+ckpt: null
+#ckpt: ./outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/glo12-sla-4th-fdv/checkpoints/best.ckpt
+#config_path: ./outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/.hydra/config.yaml
+
+#ckpt: ./outputs/2025-10-30/glo12-sla-4th-fdv++-ossev1-noiseg+u03-10-21-17/glo12-sla-4th-fdv++-ossev1/checkpoints/best.ckpt
+#config_path: ./outputs/2025-10-30/glo12-sla-4th-fdv++-ossev1-noiseg+u03-10-21-17/.hydra/config.yaml
+
+trainer:
+  check_val_every_n_epoch: 3
+  max_epochs: 2000
+  limit_train_batches: 100 #250
+  accumulate_grad_batches: 3 #8
+
+datamodule:  
+  _target_: contrib.glorys12.DistinctNormDataModulewInputTracks
+  input_da:
+    _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
+    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc
+    inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc
+    inp_var: sla
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-31']}
+    test: null
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, lat: 256, lon: 256}
+      strides: {time: 1, lat: 196, lon: 154}
+      domain_limits: ${domain.train}
+      noise: 0.03
+      noise_type: gaussian+uniform # spatial-perturb # 
+    val:
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 136, lon: 488}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: gaussian+uniform #uniform-constant #null # #uniform-constant spatial-perturb
+  #dl_kw: {batch_size: 32, num_workers: 4}
+  dl_kw: {batch_size: 4, num_workers: 4}
+
+model:
+  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN
+  w_mse: 50.
+  w_grad_mse: 1000.
+  w_prior: 1.
+  w_mse_lr: 0.
+  w_grad_mse_lr: 0
+  osse_with_interp_error: false #true
+  solver:
+    _target_: contrib.4dvarnet_latent.models.GradSolverZeroInit_withStep #ocean4dvarnet.models.GradSolver
+    n_step: 5 #10
+    lr_grad: 0. #1e3
+    std_latent_init: 0.1    
+    # lr_grad: 0.2
+    prior_cost:
+      _target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
+      dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
+      dim_hidden: 128 #128 #64
+      bilin_quad: false
+      # bilin_quad: true
+      downsamp: 4 #4 #null # 4
+      bias: false
+    obs_cost:
+      _target_: ocean4dvarnet.models.BaseObsCost
+    grad_mod:
+      _target_: contrib.4dvarnet_latent.models.GradModelWithCondition
+      dropout: 0.1
+      grad_model: 
+        _target_: contrib.4dvarnet_latent.unet.UNetModel
+        in_channels: ${datamodule.xrds_kw.train.patch_dims.time}
+        out_channels: ${datamodule.xrds_kw.train.patch_dims.time}
+        model_channels: 64 #32
+        num_res_blocks: 2
+        channel_mult: [1,2,4]
+        attention_resolutions: []
+        use_checkpoint: true
+        dropout: 0.1
+entrypoints:
+  - _target_: pytorch_lightning.seed_everything
+    seed: 333 #111 #
+#  - _target_: contrib.glorys12.train
+#    trainer: ${trainer}
+#    lit_mod: ${model}
+#    dm: ${datamodule}
+#    ckpt: ${ckpt}
+  - _target_: contrib.glorys12.train_from_pretrained_model
+    trainer: ${trainer}
+    lit_mod: ${model}
+    dm: ${datamodule}
+    config_path: ${config_path}
+    ckpt_path: ${ckpt}
+defaults:
+  - glo12-sla-4th-unet
+  - _self_

@@ -64,7 +64,7 @@ class LitModel(pl.LightningModule):
             batch_ = PredictItem( ( batch.input - m_inp ) / s_inp,
                                    batch.lon, 
                                    batch.lat )
-        elif True:
+        elif False:
             lat = _LAT_TO_RAD * batch.lat.view(-1,1,batch.lat.shape[1],1).repeat(1,1,1,batch.input.shape[-1])
             m_inp = 0.
             s_inp = 0.9 / torch.cos(lat)
@@ -80,9 +80,7 @@ class LitModel(pl.LightningModule):
             outputs = 0.
             #print('... using ensemble mean from noise during inference noise =', sigma_noise )
             for _ in range(N):
-                noise = torch.randn_like( batch_.input ) * self.std_noise_input # 0.15 0.10 0.05 0.03 0.01 
-                #noise = torch.rand_like( batch_.input ) * 0.05
-                #noise = torch.where( noise > 0.90, torch.nan, 0. ) #0.95
+                noise = torch.randn_like( batch_.input ) * self.std_noise_input 
 
                 batch_noisy = PredictItem( batch_.input + noise,
                                            batch_.lon, 
@@ -440,7 +438,7 @@ def _run(cfg):
         std_noise_input=cfg.get("std_noise_input", 0.05),
     )
 
-    #print('.... Number of steps during training: ', litmod.solver.n_steps_val)
+    #print('.... Number of steps during training: ', litmod.solver.solver.n_step)
     #litmod.solver.solver.n_steps_val = 10
     #print('.... New number of steps: ', litmod.solver.n_steps_val)
 

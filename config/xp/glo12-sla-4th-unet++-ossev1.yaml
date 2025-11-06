@@ -1,5 +1,5 @@
 # @package _global_
-xpname: glo12-sla-4th-unet+-ossev1-noiseg+u03-grad+
+xpname: glo12-sla-4th-unet3d++-dropout02-ossev1-noiseg+u03
 
 ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-09-01-30/glo12-sla-4th-unet/checkpoints/last.ckpt
 #ckpt: null #./outputs/2025-08-12/glo12-sla-4th-unet-noise2-19-24-46/glo12-sla-4th-unet/checkpoints//last.ckpt
@@ -51,7 +51,7 @@ datamodule:
       noise: .03
       noise_type: gaussian+uniform #uniform-constant #null # #uniform-constant spatial-perturb
   #dl_kw: {batch_size: 32, num_workers: 4}
-  dl_kw: {batch_size: 16, num_workers: 4}
+  dl_kw: {batch_size: 8, num_workers: 4}
 model:
   _target_: contrib.4dvarnet_latent.models.LitUnetFromLit4dVarNetIgnoreNaN
   w_mse: 50.
@@ -66,16 +66,15 @@ model:
     T_max: ${trainer.max_epochs}
   solver:
     #_target_: contrib.4dvarnet_latent.models.UnetSolver2 #ocean4dvarnet.models.GradSolver
-    _target_: contrib.4dvarnet_latent.models.UnetSolverBilin
-    dim_in: 15 #${datamodule.xrds_kw.train.patch_dims.time}
-    dropout: 0.1
-    #channel_dims: [64, 64, 64, 128, 128, 128, 256, 256, 256, 512]
-    channel_dims: [256, 256, 256, 256, 256, 256, 256, 256, 256, 512]
-    bias: false
-    interp_mode: bilinear
-    activation_layer:
-      _target_: torch.nn.ReLU
-    #channel_dims: [128, 128, 128, 256, 256, 256, 512, 512, 512, 1024]
+    _target_: contrib.4dvarnet_latent.unet.UNetModel
+    in_channels: ${datamodule.xrds_kw.train.patch_dims.time}
+    out_channels: ${datamodule.xrds_kw.train.patch_dims.time}
+    model_channels: 96
+    num_res_blocks: 2
+    channel_mult: [1,2,4]
+    attention_resolutions: []
+    use_checkpoint: true
+    dropout: 0.2
 entrypoints:
   - _target_: pytorch_lightning.seed_everything
     seed: 333 #111 #

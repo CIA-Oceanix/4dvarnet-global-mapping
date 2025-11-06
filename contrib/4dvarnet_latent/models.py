@@ -18,6 +18,56 @@ PredictItem = namedtuple("PredictItem", ("input","lon","lat"))
 
 _LAT_TO_RAD = np.pi / 180.0
 
+
+class GradModelWithCondition(torch.nn.Module):
+    """
+    A generic conditional model for gradient modulation.
+
+    Attributes:
+        grad_model : grad update model
+    """
+
+    def __init__(self, grad_model=False, dropout=0.):
+        """
+        Initialize the ConvLstmGradModel.
+
+        Args:
+            grad_model : grad update model
+        """
+        super().__init__()
+        self.grad_model = grad_model
+        self.dropout = torch.nn.Dropout(dropout)
+
+    def reset_state(self, inp):
+        """
+        Reset the internal state of the LSTM.
+
+        Args:
+            inp (torch.Tensor): Input tensor to determine state size.
+        """
+        self._grad_norm = None
+
+
+    def forward(self, x, timesteps=[], extra=[]):
+        """
+        Perform the forward pass of the LSTM.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor.
+        """
+        if self._grad_norm is None:
+            self._grad_norm = (x**2).mean().sqrt()
+        x = x / self._grad_norm
+
+        x = self.dropout(x)
+        out = self.grad_model.predict(x, timesteps=timesteps, extra=extra)
+
+        return out
+
+
 class ConvLstmGradModel(torch.nn.Module):
     """
     A convolutional LSTM model for gradient modulation.
@@ -191,7 +241,7 @@ class ConvLstmGradModelUnet(torch.nn.Module):
             torch.Tensor: Output tensor.
         """
         if self._grad_norm is None:
-            self._grad_norm = (x**2).mean().sqrt()
+            self._grad_norm = (x**2).mean().sqrt().detach() # check the impact of the detach here
         x = x / self._grad_norm
         hidden, cell = self._state
         x = self.dropout(x)
@@ -363,7 +413,8 @@ class GradSolverZeroInit_withStep(GradSolver):
         grad = torch.autograd.grad(var_cost, state, create_graph=True)[0]
 
         t = torch.tensor([step], device=grad.device).repeat(grad.shape[0])
-        gmod = self.grad_mod(grad, t)
+        #gmod = self.grad_mod(grad, t)
+        gmod = self.grad_mod(grad, timesteps=t, extra=[])
 
         state_update = (
              1. / self.n_step * gmod
@@ -387,7 +438,120 @@ class GradSolverZeroInit_withStep(GradSolver):
             self.grad_mod.reset_state(batch.input)
 
             for step in range(self.n_step):
-                state = self.solver_step(state, batch, step=step)
+                state = self.solver_step(state, batch, step= step / self.n_step)
+                if not self.training:
+                    state = state.detach().requires_grad_(True)
+
+            #if not self.training:
+            #    state = self.prior_cost.forward_ae(state)
+        return state
+
+
+class GradSolver_withStep(GradSolver):
+
+
+    def __init__(self, prior_cost, obs_cost, grad_mod, n_step, lr_grad=0.2, lbd=1.0, **kwargs):
+        """
+        Initialize the GradSolver.
+
+        Args:
+            prior_cost (nn.Module): The prior cost function.
+            obs_cost (nn.Module): The observation cost function.
+            grad_mod (nn.Module): The gradient modulation model.
+            n_step (int): Number of optimization steps.
+            lr_grad (float, optional): Learning rate for gradient updates. Defaults to 0.2.
+            lbd (float, optional): Regularization parameter. Defaults to 1.0.
+        """
+        self.input_grad_update = kwargs.pop(
+            "input_grad_update",
+            kwargs["input_grad_update"],
+        )
+        print("Input type for GradSolver =",self.input_grad_update,flush=True)
+
+        super().__init__(prior_cost, obs_cost, grad_mod, n_step=n_step, lr_grad=lr_grad, lbd=lbd,**kwargs)
+
+        self.grad_mod._grad_norm = None
+
+    def init_state(self, batch, x_init=None):
+        """
+        Initialize the state for optimization.
+
+        Args:
+            batch (dict): Input batch containing data.
+            x_init (torch.Tensor, optional): Initial state. Defaults to None.
+
+        Returns:
+            torch.Tensor: Initialized state.
+        """
+        if x_init is not None:
+            return x_init
+
+        return torch.zeros_like(batch.input).detach().requires_grad_(True)
+
+    def solver_step(self, state, batch, step):
+        """
+        Perform a single optimization step.
+
+        Args:
+            state (torch.Tensor): Current state.
+            batch (dict): Input batch containing data.
+            step (int): Current optimization step.
+
+        Returns:
+            torch.Tensor: Updated state.
+        """
+    
+        t = torch.tensor([step], device=state.device).repeat(state.shape[0])
+
+        if (self.input_grad_update == 'grad-only') or (self.input_grad_update == 'grad+state'):
+            var_cost = self.prior_cost(state) + self.lbd**2 * self.obs_cost(state, batch)
+            grad = torch.autograd.grad(var_cost, state, create_graph=True)[0]
+
+            #if self.grad_mod._grad_norm is None:
+            #    self.grad_mod._grad_norm = (grad**2).mean().sqrt().detach()
+            #grad = grad / self.grad_mod._grad_norm
+
+            if self.input_grad_update == 'grad+state':
+                grad = torch.concatenate((grad,state),dim=1)
+
+        elif  self.input_grad_update == 'obs+state' :
+            grad = torch.concatenate((state,batch.input.nan_to_num()),dim=1)
+
+        elif  self.input_grad_update == 'gobs+sgprior' :
+            gobs = (batch.input-state).nan_to_num()
+            gprior = state - self.prior_cost.forward_ae(state)
+            grad = torch.concatenate((gobs,gprior),dim=1)
+
+        elif  self.input_grad_update == 'subgrad+state' :
+            gobs = (batch.input-state).nan_to_num()
+            gprior = state - self.prior_cost.forward_ae(state)
+            grad = torch.concatenate((gobs,gprior,state),dim=1)
+
+        gmod = self.grad_mod(grad, timesteps=t, extra=[])
+
+
+        state_update =  1. / self.n_step * gmod
+        if ( self.input_grad_update == 'grad-only' ) or ( self.input_grad_update == 'grad+state' ) :
+            state_update += self.lr_grad * (step + 1) / self.n_step * grad[:,:state.shape[1],:,:]
+
+        return state - state_update
+    
+    def forward(self, batch):
+        """
+        Perform the forward pass of the solver.
+
+        Args:
+            batch (dict): Input batch containing data.
+
+        Returns:
+            torch.Tensor: Final optimized state.
+        """
+        with torch.set_grad_enabled(True):
+            state = self.init_state(batch)
+            self.grad_mod.reset_state(batch.input)
+
+            for step in range(self.n_step):
+                state = self.solver_step(state, batch, step= step / self.n_step)
                 if not self.training:
                     state = state.detach().requires_grad_(True)
 
@@ -754,7 +918,7 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
 
         self.osse_with_interp_error = kwargs.pop("osse_with_interp_error",False)
 
-        print( self.osse_with_interp_error)
+        print('osse_with_interp_error:', self.osse_with_interp_error)
 
         super().__init__(*args, **kwargs)
 
@@ -885,10 +1049,13 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
             return None, None
 
         # osse input
+        #print( 'sampling osse data with l3 interp error: ', self.osse_with_interp_error , flush=True)
+        #print('... phase: ', phase , flush=True)
         if ( self.osse_with_interp_error == True ) and ( ( phase == "train" ) or ( phase == "val" ) ):
-        
+            
             batch_ = self.sample_osse_data_with_l3interp_errr(batch)
         else:
+            #print('... raw batch')
             batch_ = batch
             
         # apply base-step

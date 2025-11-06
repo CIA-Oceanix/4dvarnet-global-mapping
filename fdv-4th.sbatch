@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --partition=Odyssey                       
-#SBATCH --gres=gpu:h100:1                       # a100:1                       
+#SBATCH --gres=gpu:a100:1                       # a100:1                       
 #SBATCH --job-name=fdv+-pp-4th                
 #SBATCH --output=logs/Test-GPU_%j.log           
 #SBATCH --mem=100G
@@ -28,17 +28,22 @@ cp --update=none /Odyssey/public/data_challenge_ssh_ose/data/alongtrack/mask_6na
 cp --update=none /Odyssey/public/duacs/2010_2019/duacs_2010_2019_0.25deg_float32.nc $scrdir/
 cp --update=none /Odyssey/public/altimetry_traces/2010_2019/gridded_0.25deg/sla_l3_all_2010_2019_0.25deg_convl4_float32.nc $scrdir/
 cp --update=none /Odyssey/public/altimetry_traces/2010_2019/da_ose_2010_2019_daily_bool_1deg_convl4.nc $scrdir/
+cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc $scrdir/
+cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc $scrdir/
 
 cd /Odyssey/private/rfablet/Python/4dvarnet-global-mapping
 #srun python main.py xp=glo12-sla-4th-unet domain=glorys
 #srun python main.py xp=glo12-sla-4th-fdv domain=glorys
 #srun python main.py xp=glo12-sla-4th-twofdv domain=glorys
 #srun python main.py xp=glo12-sla-4th-fdv++latent domain=glorys
-srun python main.py xp=glo12-sla-4th-fdv++ domain=glorys
+#srun python main.py xp=glo12-sla-4th-fdv++ domain=glorys
 #srun python main.py xp=glo12-sla-4th-fdv++-oseWosse domain=glorys
 #srun python main.py xp=glo12-sla-4th-fdvunet domain=glorys
 #srun python main.py xp=glo12-sla-4th-fdv-oseWosse domain=glorys
 #srun python main.py xp=glo12-sla-4th-fdvunet-oseWosse domain=glorys
+#srun python main.py xp=glo12-sla-4th-fdv++-ossev1 domain=glorys
+#srun python main.py xp=glo12-sla-4th-fdvunet-ossev1 domain=glorys
+srun python main.py xp=glo12-sla-4th-unrolling-ossev1 domain=glorys
 
 #cd inference
 #srun dvc repro

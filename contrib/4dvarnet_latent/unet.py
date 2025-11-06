@@ -796,6 +796,8 @@ class UNetModel(nn.Module):
                     )
                 ]
                 ch = int(mult * self.model_channels)
+
+                print(ds)
                 if ds in self.attention_resolutions:
                     layers.append(
                         AttentionBlock(
@@ -920,7 +922,10 @@ class UNetModel(nn.Module):
             zero_module(conv_nd(self.dims, input_ch, self.out_channels, 3, padding=1)),
         )
 
-    def forward(self, x, timesteps, extra):
+    def reset_state(self,x=None):
+        self._grad_norm = None
+
+    def predict(self, x, timesteps, extra):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
@@ -933,6 +938,7 @@ class UNetModel(nn.Module):
             x = torch.cat([x, z_f], dim=1)
 
         hs = []
+
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels).to(x))
 
         if self.ignore_time:
@@ -966,6 +972,23 @@ class UNetModel(nn.Module):
         h = h.type(x.dtype)
         result = self.out(h)
         return result
+
+    def forward(self, batch, timesteps=None, extra=None):
+        x = batch.input
+        x = x.nan_to_num()
+
+        if timesteps is None:
+            timesteps = torch.zeros((x.shape[0],), device=x.device, dtype=torch.long)
+        if extra is None:
+            extra = []
+
+        out = self.predict(x, timesteps, extra)
+
+
+        #if self.dims+2 > len(batch.input.shape):
+        #    out = out.view(out.shape[0], out.shape[2], out.shape[3], out.shape[4] ) # add channel dim if missing
+
+        return out
 
 # Based on https://github.com/google-research/vdm/blob/main/model_vdm.py
 def base2_fourier_features(
