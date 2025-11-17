@@ -21,6 +21,7 @@ stages:
       +obs_filtering=${method.obs_filtering}
       +output_dc_format=true
       +ensemble_mean_from_noise=${method.ensemble_mean_from_noise}
+      +nb_steps_solver=${method.nb_steps_solver}
       +std_noise_input=${method.std_noise_input}
       +batch_size=1
       hydra.run.dir=. hydra.output_subdir=null hydra/job_logging=disabled

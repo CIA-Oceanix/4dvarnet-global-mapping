@@ -1,12 +1,10 @@
 # @package _global_
-xpname: glo12-sla-4th-fdvunet15M-ossev1-noiseg+u03
+#xpname: glo12-sla-4th-fdvunet15M-ossev1-noiseg+u03
+xpname: glo12-sla-4th-fdvunet15M-ft1àiter-ossev1-noiseg+u03
 
-ckpt: null
-#ckpt: ./outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/glo12-sla-4th-fdv/checkpoints/best.ckpt
-#config_path: ./outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/.hydra/config.yaml
-
-#ckpt: ./outputs/2025-10-30/glo12-sla-4th-fdv++-ossev1-noiseg+u03-10-21-17/glo12-sla-4th-fdv++-ossev1/checkpoints/best.ckpt
-#config_path: ./outputs/2025-10-30/glo12-sla-4th-fdv++-ossev1-noiseg+u03-10-21-17/.hydra/config.yaml
+#ckpt: null
+ckpt: ./outputs/2025-11-04/glo12-sla-4th-fdvunet15M-ossev1-noiseg+u03-08-36-55/glo12-sla-4th-fdvunet-ossev1/checkpoints/best.ckpt
+config_path: ./outputs/2025-11-04/glo12-sla-4th-fdvunet15M-ossev1-noiseg+u03-08-36-55/.hydra/config.yaml
 
 trainer:
   check_val_every_n_epoch: 3
@@ -53,7 +51,7 @@ model:
   osse_with_interp_error: false #true
   solver:
     _target_: contrib.4dvarnet_latent.models.GradSolverZeroInit_withStep #ocean4dvarnet.models.GradSolver
-    n_step: 5 #10
+    n_step: 10 #10
     lr_grad: 0. #1e3
     std_latent_init: 0.1    
     # lr_grad: 0.2

@@ -6,8 +6,9 @@ method:
   normalization_type: none #norm_stats_from_patch
   obs_filtering: false #true
   interp_on_mdt_grid: false #true
-  ensemble_mean_from_noise: true #true #true #true #true
-  std_noise_input: 0.20
+  ensemble_mean_from_noise: true #false #true 
+  std_noise_input: 0.2 #0.20
+  nb_steps_solver: 5 #10
 #  name: unet-4th-glo12-sla
 #  checkpoint: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/glo12-sla-4th-unet/checkpoints/best.ckpt
 #  config: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/.hydra/config.yaml
@@ -312,10 +313,30 @@ method:
   #checkpoint: ../outputs/2025-11-04/glo12-sla-4th-fdv++-ft3-ossev1-noiseg+u03-00-06-58/glo12-sla-4th-fdv++-ossev1/checkpoints/best.ckpt
   #config: ../outputs/2025-11-04/glo12-sla-4th-fdv++-ft3-ossev1-noiseg+u03-00-06-58/.hydra/config.yaml
 
-  #name: fdvunet15M-ossev1u+g-noise03-4th-wlwe-filtered-4
+  #name: fdvunet15M-ossev1u+g-noise03-4th-wlwe-filtered-8
   #checkpoint: ../outputs/2025-11-04/glo12-sla-4th-fdvunet15M-ossev1-noiseg+u03-08-36-55/glo12-sla-4th-fdvunet-ossev1/checkpoints/best.ckpt
   #config: ../outputs/2025-11-04/glo12-sla-4th-fdvunet15M-ossev1-noiseg+u03-08-36-55/.hydra/config.yaml
 
-  name: unet15M-obs+state-ossev1-noise03-4th-wlwe-filtered-0
-  checkpoint: ../outputs/2025-11-04/glo12-sla-4th-unet15M-obs+state-ossev1-noiseg+u03-17-58-17/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
-  config: ../outputs/2025-11-04/glo12-sla-4th-unet15M-obs+state-ossev1-noiseg+u03-17-58-17/.hydra/config.yaml
+  #name: unet15M-obs+state-ossev1-noise03-4th-wlwe-filtered-1
+  #checkpoint: ../outputs/2025-11-04/glo12-sla-4th-unet15M-obs+state-ossev1-noiseg+u03-17-58-17/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
+  #config: ../outputs/2025-11-04/glo12-sla-4th-unet15M-obs+state-ossev1-noiseg+u03-17-58-17/.hydra/config.yaml
+
+  #name: glo12-sla-4th-unet15M-fm-obs+state-ossev1-noiseg+u03-1
+  #checkpoint: ../outputs/2025-11-10/glo12-sla-4th-unet15M-fm-obs+state-ossev1-noiseg+u03-21-17-30/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
+  #config: ../outputs/2025-11-10/glo12-sla-4th-unet15M-fm-obs+state-ossev1-noiseg+u03-21-17-30/.hydra/config.yaml 
+
+  #name: glo12-sla-4th-unet15M-fm-subgrad+state-ossev1-noiseg+u03-1
+  #checkpoint: ../outputs/2025-11-12/glo12-sla-4th-unet15M-fm-subgrad+state-ossev1-noiseg+u03-21-43-32/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
+  #config: ../outputs/2025-11-12/glo12-sla-4th-unet15M-fm-subgrad+state-ossev1-noiseg+u03-21-43-32/.hydra/config.yaml
+
+  #name: glo12-sla-4th-unet15M-5iter-obs+state-nobias-bilin-ossev1-noiseg+u03-0
+  #checkpoint: ../outputs/2025-11-06/glo12-sla-4th-unet15M-unrolling-5iter-nobias-bilin-ossev1-noiseg+u03-11-26-55/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
+  #config: ../outputs/2025-11-06/glo12-sla-4th-unet15M-unrolling-5iter-nobias-bilin-ossev1-noiseg+u03-11-26-55/.hydra/config.yaml
+
+  name: glo12-sla-4th-unet15M-5iter-subgrad+state-ossev1-noiseg+u03-6
+  checkpoint: ../outputs/2025-11-13/glo12-sla-4th-unet15M-unrolling-5iter-subgrad+state-ossev1-noiseg+u03-20-24-18/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
+  config: ../outputs/2025-11-13/glo12-sla-4th-unet15M-unrolling-5iter-subgrad+state-ossev1-noiseg+u03-20-24-18/.hydra/config.yaml 
+
+  #name: fdvunet15M-10iter-ossev1u+g-noise03-4th-wlwe-filtered-1
+  #checkpoint: ../outputs/2025-11-13/glo12-sla-4th-fdvunet15M-ft10iter-ossev1-noiseg+u03-16-13-10/glo12-sla-4th-fdvunet-ossev1/checkpoints/best.ckpt
+  #config: ../outputs/2025-11-13/glo12-sla-4th-fdvunet15M-ft10iter-ossev1-noiseg+u03-16-13-10/.hydra/config.yaml

@@ -1,18 +1,18 @@
 # @package _global_
-xpname: glo12-sla-4th-unet15M-gradonlyv2-ossev1-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2-subgrad+state-ossev1-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-test-ossev1-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-fm-gradonly-ossev1-noiseg+u03
+xpname: glo12-sla-4th-unet15M-fm-subgrad+state-5iter-ossev1-noiseg+u03
 
 ckpt: null
 #ckpt: ./outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/glo12-sla-4th-fdv/checkpoints/best.ckpt
 #config_path: ./outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/.hydra/config.yaml
 
-#ckpt: ./outputs/2025-10-30/glo12-sla-4th-fdv++-ossev1-noiseg+u03-10-21-17/glo12-sla-4th-fdv++-ossev1/checkpoints/best.ckpt
-#config_path: ./outputs/2025-10-30/glo12-sla-4th-fdv++-ossev1-noiseg+u03-10-21-17/.hydra/config.yaml
-
 trainer:
   check_val_every_n_epoch: 3
   max_epochs: 2000
   limit_train_batches: 100 #250
-  accumulate_grad_batches: 3 #8
+  accumulate_grad_batches: 1 #8
 
 datamodule:  
   _target_: contrib.glorys12.DistinctNormDataModulewInputTracks
@@ -41,22 +41,23 @@ datamodule:
       noise: .03
       noise_type: gaussian+uniform #uniform-constant #null # #uniform-constant spatial-perturb
   #dl_kw: {batch_size: 32, num_workers: 4}
-  dl_kw: {batch_size: 4, num_workers: 4}
+  dl_kw: {batch_size: 8, num_workers: 4}
 
 model:
-  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN
+  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN_FM
   w_mse: 50.
   w_grad_mse: 1000.
-  w_prior: 1.
+  w_prior: 1. #1.
   w_mse_lr: 0.
   w_grad_mse_lr: 0
   osse_with_interp_error: false #true
   solver:
-    _target_: contrib.4dvarnet_latent.models.GradSolver_withStep #ocean4dvarnet.models.GradSolver
-    n_step: 5 #10
+    _target_: contrib.4dvarnet_latent.models.GradSolver_FM #GradSolver_withStep # ##GradSolver_FM # #ocean4dvarnet.models.GradSolver
+    n_step: 5 #2 #5 #10
     lr_grad: 0. #1e3
-    std_latent_init: 0.1
-    input_grad_update: 'grad-only' # 'obs+state' #'subgrad+state' #'gobs+sgprior' #'grad+state'  #'grad-only' #'grad+state'  #'grad+state' #    
+    std_init: 1.0
+    input_grad_update: 'subgrad+state' #'grad-only' #'grad+state' #'obs+state' #'obs-only'  # 'grad+previous'  #'gobs+sgprior' #'grad+state'  #'grad-only' #'grad+state'  #'grad+state' #    
+    use_fm_learning: true
     # lr_grad: 0.2
     prior_cost:
       _target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
@@ -71,8 +72,8 @@ model:
     grad_mod:
       _target_: contrib.4dvarnet_latent.models.GradModelWithCondition
       grad_model: 
-        _target_: contrib.4dvarnet_latent.unet.UNetModel
-        in_channels: 15 #${datamodule.xrds_kw.train.patch_dims.time}
+        _target_: contrib.4dvarnet_latent.unet.UNetModel2
+        in_channels: 45 #${datamodule.xrds_kw.train.patch_dims.time}
         out_channels: ${datamodule.xrds_kw.train.patch_dims.time}
         model_channels: 64 #32
         num_res_blocks: 2
@@ -80,6 +81,8 @@ model:
         attention_resolutions: []
         use_checkpoint: true
         dropout: 0.1
+        bias: false #true #
+        interp_mode: 'bilinear' #'nearest' # 
 entrypoints:
   - _target_: pytorch_lightning.seed_everything
     seed: 333 #111 #

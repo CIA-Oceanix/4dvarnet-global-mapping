@@ -42,9 +42,9 @@ class LitModel(pl.LightningModule):
 
         self.std_noise_input = kwargs.get("std_noise_input", 0.05)
         
-        if kwargs.get("ensemble_mean_from_noise",False) == True:
-            save_dir = save_dir.replace('.nc', '-wnoise' + '%.2f' % self.std_noise_input + '.nc')
-            print('... will save to ', save_dir)
+        #if kwargs.get("ensemble_mean_from_noise",False) == True:
+        #    save_dir = save_dir.replace('.nc', '-wnoise' + '%.2f' % self.std_noise_input + '.nc')
+        #    print('... will save to ', save_dir)
 
         self.save_dir = Path(save_dir)
         self.save_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -405,11 +405,18 @@ def _run(cfg):
 
     resolution = (patcher.da.lat[1] - patcher.da.lat[0]).item()
 
+    save_dir=cfg["output_path"]
+    if cfg.get("nb_steps_solver", 0.) > 0:
+        save_dir = save_dir.replace('.nc', '-niter' + str(cfg.get("nb_steps_solver")) + '.nc')
+    if cfg.get("ensemble_mean_from_noise", False):
+        save_dir = save_dir.replace('.nc', '-wnoise' + '%.2f' % cfg.get("std_noise_input", 0.05) + '.nc')
+    print('... will save to ', save_dir)
+
     litmod = LitModel(
         patcher,
         solver,
         norm_stats,
-        save_dir=cfg["output_path"],
+        save_dir=save_dir, #cfg["output_path"],
         crop_val=int(1 / resolution),
         save_cropped=cfg.get("save_cropped", True),
         out_var=cfg.get("output_var", "ssh"),
@@ -438,6 +445,11 @@ def _run(cfg):
         std_noise_input=cfg.get("std_noise_input", 0.05),
     )
 
+    print( hasattr(litmod.solver.solver, 'n_step'))
+    if hasattr(litmod.solver.solver, 'n_step') is True:
+        print('.... Number of steps during training: ', litmod.solver.solver.n_step)
+        litmod.solver.solver.n_step = cfg.get("nb_steps_solver", 5)
+        print('.... New number of steps: ', litmod.solver.solver.n_step)
     #print('.... Number of steps during training: ', litmod.solver.solver.n_step)
     #litmod.solver.solver.n_steps_val = 10
     #print('.... New number of steps: ', litmod.solver.n_steps_val)
