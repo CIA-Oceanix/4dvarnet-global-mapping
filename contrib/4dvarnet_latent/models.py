@@ -1,3 +1,4 @@
+from cmath import phase
 from collections import namedtuple
 import functools as ft
 import time
@@ -486,7 +487,11 @@ class GradSolver_withStep(GradSolver):
         if x_init is not None:
             return x_init.detach().requires_grad_(True)
 
-        return torch.zeros_like(batch.input).detach().requires_grad_(True)
+        if hasattr(self, 'std_init') is True :
+            x0 = self.std_init * torch.randn_like(batch.input)
+            return x0.detach().requires_grad_(True)
+        else:
+            return torch.zeros_like(batch.input).detach().requires_grad_(True)
 
     def init_h_state(self, batch, h_state=None):
         """
@@ -591,7 +596,7 @@ class GradSolver_withStep(GradSolver):
         return state
 
 class GradSolver_FM(GradSolver_withStep):
-    def __init__(self, prior_cost, obs_cost, grad_mod, n_step, lr_grad=0.2, lbd=1.0,std_init=0.,use_fm_learning=False, **kwargs):
+    def __init__(self, prior_cost, obs_cost, grad_mod, n_step, lr_grad=0.2, lbd=1.0,std_init=0., **kwargs):
         """
         Initialize the GradSolver.
 
@@ -606,7 +611,6 @@ class GradSolver_FM(GradSolver_withStep):
         super().__init__(prior_cost, obs_cost, grad_mod, n_step=n_step, lr_grad=lr_grad, lbd=lbd,**kwargs)
 
         self.std_init = std_init
-        self.use_fm_learning = use_fm_learning
 
     def init_state(self, batch, x_init=None, std_init=0., use_fm_learning=False, step_init=None, phase='test'):
         """
@@ -635,14 +639,13 @@ class GradSolver_FM(GradSolver_withStep):
             #print('t in init_state:', t, flush=True)
             t_ = t.view(-1,1,1,1).repeat(1,batch.input.shape[1],batch.input.shape[2],batch.input.shape[3])
             xt = (1.-t_) * noise + t_ * batch.tgt.nan_to_num()
-            
-            
+                        
             if ( not self.training ) and ( 'grad' in self.input_grad_update ):
                 return xt.detach().requires_grad_(True), t #torch.zeros(batch.input.shape[0],device=batch.input.device)
             else:
                 return xt.detach(), t #torch.zeros(batch.input.shape[0],device=batch.input.device)
         else:
-            t = 0.
+            t = 0. #torch.zeros((batch.input.shape[0],),device=batch.input.device)
             x0 = std_init * torch.randn_like(batch.input)
 
             if ( not self.training ) and ( 'grad' in self.input_grad_update ):
@@ -650,7 +653,32 @@ class GradSolver_FM(GradSolver_withStep):
             else:
                 return x0, t #torch.zeros(batch.input.shape[0],device=batch.input.device)
 
-        
+    def forward_one_inference_step(self, batch, x_init, t_init, phase='test', use_fm_learning=False):
+        with torch.set_grad_enabled( 'grad' in self.input_grad_update ):
+
+            if phase == 'train' and use_fm_learning:
+                alpha_step = (1. - t_init) / self.n_step
+                alpha_step = alpha_step.view(-1,1,1,1).repeat(1,batch.input.shape[1],batch.input.shape[2],batch.input.shape[3])
+            else:
+                alpha_step = 1. / self.n_step
+            
+            state = 1. * x_init
+            for step in range(self.n_step):
+                t_step = t_init + ( step / self.n_step ) * ( 1. - t_init )
+                state = self.solver_step(state, batch, step = t_step , alpha_step=alpha_step)
+
+                if ( not self.training ) and ( 'grad' in self.input_grad_update ):
+                    state = state.detach().requires_grad_(True)
+                else:
+                    state = state #.detach()
+        return state, self.h_state
+
+    def alpha_step(self, t):
+        return 1. - t, -1.
+    
+    def beta_step(self, t):
+        return t, 1.
+
     def forward(self, batch, x_init=None, h_state=None, phase='test', use_fm_learning=False):
         """
         Perform the forward pass of the solver.
@@ -661,25 +689,65 @@ class GradSolver_FM(GradSolver_withStep):
         Returns:
             torch.Tensor: Final optimized state.
         """
-        with torch.set_grad_enabled( 'grad' in self.input_grad_update ):
-            state, t_init = self.init_state(batch, x_init=x_init, std_init=self.std_init, use_fm_learning=self.use_fm_learning,  phase=phase )
+        if hasattr(self, 'n_step_inference') is False:
+            n_step_inference = 0
+        else:
+            n_step_inference = self.n_step_inference
+
+        if n_step_inference > 1: # ODE solver
+            # sampling init state
+            x0 = self.std_init * torch.randn_like(batch.input)
+            state = 1. * x0
+            self.grad_mod.reset_state(batch.input)
+            t = 0.
+
+            # ODE solver loop
+            for ode_step in range(n_step_inference):
+                t  = ode_step * 1. / n_step_inference
+                alpha, dalpha = self.alpha_step( t )
+                beta, dbeta = self.beta_step( t )
+                
+                self.init_h_state(batch, h_state=None)
+                expected_mean, h_state = self.forward_one_inference_step(batch, state, t, phase=phase)
+                expected_x0 = 1. / alpha * ( state - beta * expected_mean )
+                
+                state = state + (1. / n_step_inference) * ( dalpha * expected_x0 + dbeta * expected_mean )    
+            return state
+
+        else:     
+            x_init, t_init = self.init_state(batch, x_init=x_init, std_init=self.std_init, use_fm_learning=use_fm_learning,  phase=phase )
             self.init_h_state(batch, h_state=h_state)
             self.grad_mod.reset_state(batch.input)
 
-            if phase == 'train' and use_fm_learning:
-                alpha_step = (1. - t_init) / self.n_step
-                alpha_step = alpha_step.view(-1,1,1,1).repeat(1,state.shape[1],state.shape[2],state.shape[3])
-            else:
-                alpha_step = 1. / self.n_step
-                
-            for step in range(self.n_step):
-                t_step = t_init + ( step / self.n_step ) * ( 1. - t_init )
-                state = self.solver_step(state, batch, step = t_step , alpha_step=alpha_step)
+            if False:  #True : #
+                print( 't_init in forward_one_inference_step:', t_init, flush=True)
+                print(' use_fm_learning:', use_fm_learning, flush=True)
+                print(' phase:', phase, flush=True)
+        
+            state, h_state = self.forward_one_inference_step(batch, x_init=x_init, t_init=t_init, phase=phase, use_fm_learning=use_fm_learning)
+            return state
+        
 
-                if ( not self.training ) and ( 'grad' in self.input_grad_update ):
-                    state = state.detach().requires_grad_(True)
+        if False:
+            with torch.set_grad_enabled( 'grad' in self.input_grad_update ):
+                state, t_init = self.init_state(batch, x_init=x_init, std_init=self.std_init, use_fm_learning=self.use_fm_learning,  phase=phase )
+                self.init_h_state(batch, h_state=h_state)
+                self.grad_mod.reset_state(batch.input)
+
+                if phase == 'train' and use_fm_learning:
+                    alpha_step = (1. - t_init) / self.n_step
+                    alpha_step = alpha_step.view(-1,1,1,1).repeat(1,state.shape[1],state.shape[2],state.shape[3])
                 else:
-                    state = state #.detach()
+                    alpha_step = 1. / self.n_step
+                    
+                for step in range(self.n_step):
+                    t_step = t_init + ( step / self.n_step ) * ( 1. - t_init )
+                    state = self.solver_step(state, batch, step = t_step , alpha_step=alpha_step)
+
+                    if ( not self.training ) and ( 'grad' in self.input_grad_update ):
+                        state = state.detach().requires_grad_(True)
+                    else:
+                        state = state #.detach()
 
         return state
 
@@ -1255,13 +1323,13 @@ class Lit4dVarNetIgnoreNaN_FM(Lit4dVarNetIgnoreNaN):
         super().__init__(w_mse,w_grad_mse, w_mse_lr, w_grad_mse_lr, w_prior,*args, **kwargs)
 
         self.use_fm_learning = use_fm_learning
-
+        
     def base_step(self, batch, phase):
         out = self(batch=batch, phase=phase)
         loss = self.weighted_mse(out - batch.tgt, self.get_rec_weight(phase))
 
         return loss, out
-        
+
     def forward(self, batch, phase='test'):
         """
         Forward pass through the solver.
@@ -1273,6 +1341,100 @@ class Lit4dVarNetIgnoreNaN_FM(Lit4dVarNetIgnoreNaN):
             torch.Tensor: Solver output.
         """
         return self.solver(batch, phase=phase, use_fm_learning=self.use_fm_learning)
+
+class Lit4dVarNetIgnoreNaN_FM_E2E(Lit4dVarNetIgnoreNaN_FM):
+
+    def step(self, batch, phase):
+
+        if self.training and batch.tgt.isfinite().float().mean() < 0.5:
+            return None, None
+
+        # osse input
+        #print( 'sampling osse data with l3 interp error: ', self.osse_with_interp_error , flush=True)
+        #print('... phase: ', phase , flush=True)
+        if ( self.osse_with_interp_error == True ) and ( ( phase == "train" ) or ( phase == "val" ) ):
+            
+            batch_ = self.sample_osse_data_with_l3interp_errr(batch)
+        else:
+            #print('... raw batch')
+            batch_ = batch
+        
+        # apply base-step
+        if phase == 'val' and self.use_fm_learning:
+            use_fm_learning = self.use_fm_learning
+            self.use_fm_learning = False
+            std_init = self.solver.std_init 
+            self.solver.std_init =  self.solver.std_init * torch.rand(1).to(device=batch.input.device)
+
+        loss, out = self.base_step(batch_, phase)
+
+        loss_mse = self.loss_mse(batch,out,phase)
+        loss_prior = self.loss_prior(batch,out.detach(),phase)
+
+        training_loss = self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1]
+        training_loss += self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1]
+
+        if phase == 'train' and self.use_fm_learning:
+            # apply base-step with use_fm_learning == false
+            self.use_fm_learning = False
+            std_init = self.solver.std_init
+            self.solver.std_init =  self.solver.std_init * torch.rand(1).to(device=batch.input.device)
+
+            loss, out = self.base_step(batch_, phase)
+
+            loss_mse = self.loss_mse(batch,out,phase)
+            loss_prior = self.loss_prior(batch,out.detach(),phase)
+
+            training_loss = 0.5 * training_loss + 0.5 * ( self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1] )
+            training_loss += 0.5 * ( self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1] )
+         
+            self.use_fm_learning = True
+            self.solver.std_init = std_init
+
+        elif phase == 'val' and use_fm_learning:
+            self.use_fm_learning = True
+            self.solver.std_init = std_init  
+
+        with torch.no_grad():
+            self.log(
+                f"{phase}_mse",
+                10000 * loss_mse[0] * self.norm_stats[phase][1] ** 2,
+                prog_bar=True,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+            self.log(
+                f"{phase}_loss",
+                training_loss,
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+
+            self.log(
+                f"{phase}_gloss",
+                loss_mse[1],
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+            self.log(
+                f"{phase}_ploss_out",
+                loss_prior[0],
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+            self.log(
+                f"{phase}_ploss_gt",
+                loss_prior[1],
+                prog_bar=False,
+                on_step=False,
+                on_epoch=True,  # sync_dist=True,
+            )
+
+        return training_loss, out
+        
 
 def cosanneal_lr_adam_twosolvers(lit_mod, lr, T_max=100, weight_decay=0.):
     """

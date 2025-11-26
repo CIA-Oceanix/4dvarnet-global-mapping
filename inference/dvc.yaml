@@ -22,7 +22,9 @@ stages:
       +output_dc_format=true
       +ensemble_mean_from_noise=${method.ensemble_mean_from_noise}
       +nb_steps_solver=${method.nb_steps_solver}
+      +nb_steps_fm_ode=${method.nb_steps_fm_ode}
       +std_noise_input=${method.std_noise_input}
+      +std_init_state=${method.std_init_state}
       +batch_size=1
       hydra.run.dir=. hydra.output_subdir=null hydra/job_logging=disabled
       hydra/hydra_logging=disabled

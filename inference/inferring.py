@@ -406,8 +406,15 @@ def _run(cfg):
     resolution = (patcher.da.lat[1] - patcher.da.lat[0]).item()
 
     save_dir=cfg["output_path"]
+    if cfg.get("std_init_state", None) is not None:
+        std_init_state = cfg.get("std_init_state", 1.0)
+        save_dir = save_dir.replace('.nc', '-stdinit' + '%.2f' % std_init_state + '.nc')
     if cfg.get("nb_steps_solver", 0.) > 0:
         save_dir = save_dir.replace('.nc', '-niter' + str(cfg.get("nb_steps_solver")) + '.nc')
+        if cfg.get("nb_steps_fm_ode", 0.) > 0:
+            nb_steps_fm_ode = cfg.get("nb_steps_fm_ode")
+            save_dir = save_dir.replace('-niter', '-niter' + str(nb_steps_fm_ode) + 'x')
+
     if cfg.get("ensemble_mean_from_noise", False):
         save_dir = save_dir.replace('.nc', '-wnoise' + '%.2f' % cfg.get("std_noise_input", 0.05) + '.nc')
     print('... will save to ', save_dir)
@@ -450,6 +457,16 @@ def _run(cfg):
         print('.... Number of steps during training: ', litmod.solver.solver.n_step)
         litmod.solver.solver.n_step = cfg.get("nb_steps_solver", 5)
         print('.... New number of steps: ', litmod.solver.solver.n_step)
+
+        litmod.solver.solver.n_step_inference = cfg.get("nb_steps_fm_ode", 0)
+        print('.... Number of inference steps: ', litmod.solver.solver.n_step_inference)            
+
+    if cfg.get("std_init_state", None) is not None:
+        if hasattr(litmod.solver.solver, 'std_init') is True:
+            print('.... Std_init of trained model: ', litmod.solver.solver.std_init)
+        litmod.solver.solver.std_init = cfg.get("std_init_state", 0.0)
+        print('.... New std_init: ', litmod.solver.solver.std_init)
+
     #print('.... Number of steps during training: ', litmod.solver.solver.n_step)
     #litmod.solver.solver.n_steps_val = 10
     #print('.... New number of steps: ', litmod.solver.n_steps_val)

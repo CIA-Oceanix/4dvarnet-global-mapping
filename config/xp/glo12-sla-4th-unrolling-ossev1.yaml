@@ -2,11 +2,12 @@
 #xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2-subgrad+state-ossev1-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-test-ossev1-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-fm-gradonly-ossev1-noiseg+u03
-xpname: glo12-sla-4th-unet15M-fm-subgrad+state-5iter-ossev1-noiseg+u03
+xpname: glo12-sla-4th-unet15M-fm+e2e-v3-subgrad+state-5iter-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2-subgrad+state-ossev2-noiseg+u03
 
-ckpt: null
-#ckpt: ./outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/glo12-sla-4th-fdv/checkpoints/best.ckpt
-#config_path: ./outputs/2025-08-30/glo12-sla-4th-fdv++-noise+-10-13-47/.hydra/config.yaml
+#ckpt: null
+ckpt: ./outputs/2025-11-22/glo12-sla-4th-unet15M-fm-v2-subgrad+state-5iter-ossev2-noiseg+u03-11-44-19/glo12-sla-4th-unrolling-ossev1/checkpoints/last.ckpt
+config_path: ./outputs/2025-11-22/glo12-sla-4th-unet15M-fm-v2-subgrad+state-5iter-ossev2-noiseg+u03-11-44-19/.hydra/config.yaml
 
 trainer:
   check_val_every_n_epoch: 3
@@ -18,9 +19,10 @@ datamodule:
   _target_: contrib.glorys12.DistinctNormDataModulewInputTracks
   input_da:
     _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
-    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc
-    inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc
-    inp_var: sla
+    tgt_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_gridded_from_alongtrack.nc #glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc
+    inp_path: /SCRATCH/rfablet/Dataset/glorys12_2010_2019_daily_sla_4th_gridded_from_alongtrack.nc #glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc
+    inp_var: obs #sla
+    tgt_var: tgt #sla
   domains:
     train:
       time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
@@ -44,20 +46,20 @@ datamodule:
   dl_kw: {batch_size: 8, num_workers: 4}
 
 model:
-  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN_FM
+  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN_FM_E2E
   w_mse: 50.
   w_grad_mse: 1000.
   w_prior: 1. #1.
   w_mse_lr: 0.
   w_grad_mse_lr: 0
   osse_with_interp_error: false #true
+  use_fm_learning: true
   solver:
-    _target_: contrib.4dvarnet_latent.models.GradSolver_FM #GradSolver_withStep # ##GradSolver_FM # #ocean4dvarnet.models.GradSolver
+    _target_: contrib.4dvarnet_latent.models.GradSolver_FM #GradSolver_withStep # # # ##GradSolver_FM # #ocean4dvarnet.models.GradSolver
     n_step: 5 #2 #5 #10
     lr_grad: 0. #1e3
     std_init: 1.0
     input_grad_update: 'subgrad+state' #'grad-only' #'grad+state' #'obs+state' #'obs-only'  # 'grad+previous'  #'gobs+sgprior' #'grad+state'  #'grad-only' #'grad+state'  #'grad+state' #    
-    use_fm_learning: true
     # lr_grad: 0.2
     prior_cost:
       _target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 

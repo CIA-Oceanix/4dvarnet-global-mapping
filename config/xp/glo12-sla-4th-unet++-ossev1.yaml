@@ -74,7 +74,7 @@ model:
     channel_mult: [1,2,4]
     attention_resolutions: []
     use_checkpoint: true
-    dropout: 0.2
+    dropout: 0.1
 entrypoints:
   - _target_: pytorch_lightning.seed_everything
     seed: 333 #111 #
