@@ -1,13 +1,15 @@
 # @package _global_
-#xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2-subgrad+state-ossev1-noiseg+u03
-#xpname: glo12-sla-4th-unet15M-test-ossev1-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-unrolling-5iter-randinit-subgrad+state-ossev2-noiseg+u03
+xpname: glo12-sla-4th-unet3D-test-ossev1-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-fm-gradonly-ossev1-noiseg+u03
-xpname: glo12-sla-4th-unet15M-fm+e2e-v3-subgrad+state-5iter-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-fm+e2e-subgrad+state-5iter-ossev2-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2-subgrad+state-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2bis-obs+state-ossev2-noiseg+u03
 
-#ckpt: null
-ckpt: ./outputs/2025-11-22/glo12-sla-4th-unet15M-fm-v2-subgrad+state-5iter-ossev2-noiseg+u03-11-44-19/glo12-sla-4th-unrolling-ossev1/checkpoints/last.ckpt
-config_path: ./outputs/2025-11-22/glo12-sla-4th-unet15M-fm-v2-subgrad+state-5iter-ossev2-noiseg+u03-11-44-19/.hydra/config.yaml
+ckpt: null
+#ckpt: ./outputs/2025-11-22/glo12-sla-4th-unet15M-fm-v2-subgrad+state-5iter-ossev2-noiseg+u03-11-44-19/glo12-sla-4th-unrolling-ossev1/checkpoints/last.ckpt
+#config_path: ./outputs/2025-11-22/glo12-sla-4th-unet15M-fm-v2-subgrad+state-5iter-ossev2-noiseg+u03-11-44-19/.hydra/config.yaml
 
 trainer:
   check_val_every_n_epoch: 3
@@ -42,41 +44,56 @@ datamodule:
       domain_limits: ${domain.train}
       noise: .03
       noise_type: gaussian+uniform #uniform-constant #null # #uniform-constant spatial-perturb
-  #dl_kw: {batch_size: 32, num_workers: 4}
-  dl_kw: {batch_size: 8, num_workers: 4}
+  dl_kw: {batch_size: 1, num_workers: 4}
+  #dl_kw: {batch_size: 2, num_workers: 4}
 
 model:
-  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN_FM_E2E
+  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN #_FM_E2E
   w_mse: 50.
   w_grad_mse: 1000.
   w_prior: 1. #1.
   w_mse_lr: 0.
   w_grad_mse_lr: 0
   osse_with_interp_error: false #true
-  use_fm_learning: true
+  #use_fm_learning: true
   solver:
-    _target_: contrib.4dvarnet_latent.models.GradSolver_FM #GradSolver_withStep # # # ##GradSolver_FM # #ocean4dvarnet.models.GradSolver
-    n_step: 5 #2 #5 #10
+    _target_: contrib.4dvarnet_latent.models.GradSolver_withStep #GradSolver_FM #GradSolver_withStep # # # # # ##GradSolver_FM # #ocean4dvarnet.models.GradSolver
+    n_step: 1 #2 #5 #10
     lr_grad: 0. #1e3
-    std_init: 1.0
-    input_grad_update: 'subgrad+state' #'grad-only' #'grad+state' #'obs+state' #'obs-only'  # 'grad+previous'  #'gobs+sgprior' #'grad+state'  #'grad-only' #'grad+state'  #'grad+state' #    
+    std_init: 0.
+    input_grad_update: 'subgrad+state' #'obs+state' ##'grad-only' #'grad+state' #'obs-only'  # 'grad+previous'  #'gobs+sgprior' #'grad+state'  #'grad-only' #'grad+state'  #'grad+state' #    
     # lr_grad: 0.2
     prior_cost:
-      _target_: contrib.4dvarnet_latent.models.BilinAEPriorCostTwoScale # 
-      dim_in: 15 #15 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
-      dim_hidden: 128 #128 #64
-      bilin_quad: false
+      _target_: contrib.4dvarnet_latent.models.GenericAEPriorCost
+      model_ae:
+        _target_: contrib.4dvarnet_latent.unet.UNetModel
+        in_channels: 15 #${datamodule.xrds_kw.train.patch_dims.time}
+        out_channels: ${datamodule.xrds_kw.train.patch_dims.time}
+        model_channels: 32 #32
+        num_res_blocks: 2
+        channel_mult: [1,2,4]
+        attention_resolutions: []
+        use_checkpoint: true
+        dropout: 0.1
+        bias: false #true #
+        #interp_mode: 'bilinear' #'nearest' # 
+      #_target_: contrib.4dvarnet_latent.models.AEPriorCostOneScale #AEPriorCostTwoScale #BilinAEPriorCostTwoScale # 
+      #dim_in: 15 #15 #${datamodule.xrds_kw.train.patch_dims.time}+${model.solver.latent_decoder.dim_latent}
+      #dim_hidden: 128 #128 #64
+      #bilin_quad: false
       # bilin_quad: true
-      downsamp: 4 #4 #null # 4
-      bias: false
+      #downsamp: 4 #4 #null # 4
+      #bias: false
     obs_cost:
       _target_: ocean4dvarnet.models.BaseObsCost
     grad_mod:
       _target_: contrib.4dvarnet_latent.models.GradModelWithCondition
+      #use_grad_norm: true
       grad_model: 
         _target_: contrib.4dvarnet_latent.unet.UNetModel2
-        in_channels: 45 #${datamodule.xrds_kw.train.patch_dims.time}
-        out_channels: ${datamodule.xrds_kw.train.patch_dims.time}
+        dims: 3
+        in_channels: 3 #45 #${datamodule.xrds_kw.train.patch_dims.time}
+        out_channels: 1 #${datamodule.xrds_kw.train.patch_dims.time}
         model_channels: 64 #32
         num_res_blocks: 2
         channel_mult: [1,2,4]
@@ -85,6 +102,15 @@ model:
         dropout: 0.1
         bias: false #true #
         interp_mode: 'bilinear' #'nearest' # 
+      # grad_model: 
+      #  _target_: contrib.4dvarnet_latent.unet_3d_film.UNet3D_Transformer
+      #  in_channels: 3
+      #  channels: [64,64,128,128]        # depth over width
+      #  embed_dim: 256
+      #  dropout: 0.1                       # set to 0.05–0.20 per your dataset size
+      #  attn_heads: 1
+      #  text_dim: 1                         # kept for signature compatibility
+      #  nAttr: 40  
 entrypoints:
   - _target_: pytorch_lightning.seed_everything
     seed: 333 #111 #

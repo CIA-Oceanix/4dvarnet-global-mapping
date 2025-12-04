@@ -28,7 +28,7 @@ class GradModelWithCondition(torch.nn.Module):
         grad_model : grad update model
     """
 
-    def __init__(self, grad_model=False, dropout=0.):
+    def __init__(self, grad_model=False, dropout=0.,use_grad_norm=True):
         """
         Initialize the ConvLstmGradModel.
 
@@ -38,6 +38,14 @@ class GradModelWithCondition(torch.nn.Module):
         super().__init__()
         self.grad_model = grad_model
         self.dropout = torch.nn.Dropout(dropout)
+        self.use_grad_norm = use_grad_norm
+
+        if hasattr(self.grad_model, 'dim_3d') == True:
+            self.dim_3d = self.grad_model.dim_3d
+
+        if hasattr(self.grad_model, 'dims') == True:
+            if self.grad_model.dims == 3:
+                self.dim_3d = True
 
     def reset_state(self, inp):
         """
@@ -49,7 +57,7 @@ class GradModelWithCondition(torch.nn.Module):
         self._grad_norm = None
 
 
-    def forward(self, x, timesteps=[], extra=[]):
+    def forward(self, x, timesteps=None, extra=[]):
         """
         Perform the forward pass of the LSTM.
 
@@ -59,15 +67,20 @@ class GradModelWithCondition(torch.nn.Module):
         Returns:
             torch.Tensor: Output tensor.
         """
+
         if self._grad_norm is None:
-            self._grad_norm = (x**2).mean().sqrt()
+            if self.use_grad_norm:
+                self._grad_norm = (x**2).mean().sqrt()
+            else:
+                self._grad_norm = 1.
+
+        #print('self._grad_norm in GradModelWithCondition:', self._grad_norm, flush=True)
         x = x / self._grad_norm
 
         x = self.dropout(x)
         out = self.grad_model.predict(x, timesteps=timesteps, extra=extra)
 
         return out
-
 
 class ConvLstmGradModel(torch.nn.Module):
     """
@@ -362,7 +375,6 @@ class GradSolverZeroInit(GradSolver):
             #    state = self.prior_cost.forward_ae(state)
         return state
 
-
 class GradSolverZeroInit_withStep(GradSolver):
 
 
@@ -447,9 +459,7 @@ class GradSolverZeroInit_withStep(GradSolver):
             #    state = self.prior_cost.forward_ae(state)
         return state
 
-
 class GradSolver_withStep(GradSolver):
-
 
     def __init__(self, prior_cost, obs_cost, grad_mod, n_step, lr_grad=0.2, lbd=1.0, **kwargs):
         """
@@ -468,11 +478,16 @@ class GradSolver_withStep(GradSolver):
             kwargs["input_grad_update"],
         )
         print("Input type for GradSolver =",self.input_grad_update,flush=True)
+        std_init = kwargs.pop( "std_init",None)
+        print("Std init for GradSolver =",std_init,flush=True)
 
         super().__init__(prior_cost, obs_cost, grad_mod, n_step=n_step, lr_grad=lr_grad, lbd=lbd,**kwargs)
 
         self.grad_mod._grad_norm = None
         self.h_state = None
+
+        if std_init is not None:
+            self.std_init = std_init
 
     def init_state(self, batch, x_init=None):
         """
@@ -509,6 +524,13 @@ class GradSolver_withStep(GradSolver):
         else:
             self.h_state = torch.zeros_like(batch.input).detach().requires_grad_(True)
 
+    def format2D_3D(self, x):
+        if hasattr(self.grad_mod, 'dim_3d') == True:
+            if self.grad_mod.dim_3d == True:
+                x =  x.unsqueeze(1)
+
+        return x
+
     def solver_step(self, state, batch, step, alpha_step=1.):
         """
         Perform a single optimization step.
@@ -532,13 +554,13 @@ class GradSolver_withStep(GradSolver):
         if 'subgrad' in self.input_grad_update :
             gobs = (batch.input-state).nan_to_num()
             gprior = state - self.prior_cost.forward_ae(state)
-            grad = torch.concatenate((gobs,gprior),dim=1)
+            grad = torch.concatenate((self.format2D_3D(gobs),self.format2D_3D(gprior)),dim=1)
 
             if 'state' in self.input_grad_update :
-                grad = torch.concatenate((grad,state),dim=1)
+                grad = torch.concatenate((grad,self.format2D_3D(state)),dim=1)
 
             if 'previous' in self.input_grad_update :
-                grad = torch.concatenate((grad,self.h_state),dim=1)
+                grad = torch.concatenate((grad,self.format2D_3D(self.h_state)),dim=1)
 
         elif 'grad' in self.input_grad_update :
             var_cost = self.prior_cost(state) + self.lbd**2 * self.obs_cost(state, batch)
@@ -549,19 +571,21 @@ class GradSolver_withStep(GradSolver):
             #grad = grad / self.grad_mod._grad_norm
 
             if 'state' in self.input_grad_update :
-                grad = torch.concatenate((grad,state),dim=1)
+                grad = torch.concatenate((  self.format2D_3D(grad),self.format2D_3D(state)),dim=1)
 
             if 'previous' in self.input_grad_update :
-                grad = torch.concatenate((grad,self.h_state),dim=1)
+                grad = torch.concatenate((grad,self.format2D_3D(self.h_state)),dim=1)
 
         elif  self.input_grad_update == 'obs-only' :
             grad = batch.input.nan_to_num()
 
         elif  self.input_grad_update == 'obs+state' :
-            grad = torch.concatenate((state,batch.input.nan_to_num()),dim=1)
+            grad = torch.concatenate((self.format2D_3D(state),self.format2D_3D(batch.input.nan_to_num())),dim=1)
 
-
-        gmod = self.grad_mod(grad, timesteps=t, extra=[])
+        gmod = self.grad_mod(grad, timesteps=t, extra=None)
+        if hasattr(self.grad_mod, 'dim_3d') == True:
+            if self.grad_mod.dim_3d == True:
+                gmod = gmod.squeeze(1)
 
         state_update = alpha_step * gmod
         if ( 'grad' in self.input_grad_update ) and ( self.lr_grad > 0. ) : 
@@ -2273,6 +2297,304 @@ class BilinAEPriorCostTwoScale(torch.nn.Module):
         """
         return torch.nn.functional.mse_loss(state, self.forward_ae(state))
 
+class GenericAEPriorCost(torch.nn.Module):
+    """
+    A prior cost model using bilinear autoencoders.
+
+    Attributes:
+        bilin_quad (bool): Whether to use bilinear quadratic terms.
+        conv_in (nn.Conv2d): Convolutional layer for input.
+        conv_hidden (nn.Conv2d): Convolutional layer for hidden states.
+        bilin_1 (nn.Conv2d): Bilinear layer 1.
+        bilin_21 (nn.Conv2d): Bilinear layer 2 (part 1).
+        bilin_22 (nn.Conv2d): Bilinear layer 2 (part 2).
+        conv_out (nn.Conv2d): Convolutional layer for output.
+        down (nn.Module): Downsampling layer.
+        up (nn.Module): Upsampling layer.
+    """
+
+    def __init__(self, model_ae):
+        """
+        Initialize the BilinAEPriorCost module.
+
+        Args:
+            dim_in (int): Number of input dimensions.
+            dim_hidden (int): Number of hidden dimensions.
+            kernel_size (int, optional): Kernel size for convolutions. Defaults to 3.
+            downsamp (int, optional): Downsampling factor. Defaults to None.
+            bilin_quad (bool, optional): Whether to use bilinear quadratic terms. Defaults to True.
+        """
+        super().__init__()
+
+        self.model_ae = model_ae 
+
+    def forward_ae(self, x):
+        """
+        Perform the forward pass through the autoencoder.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor after passing through the autoencoder.
+        """
+        return self.model_ae(x)
+
+    def forward(self, state):
+        """
+        Compute the prior cost using the autoencoder.
+
+        Args:
+            state (torch.Tensor): The current state tensor.
+
+        Returns:
+            torch.Tensor: The computed prior cost.
+        """
+        return torch.nn.functional.mse_loss(state, self.forward_ae(state))
+
+class AEPriorCostOneScale(torch.nn.Module):
+    """
+    A prior cost model using bilinear autoencoders.
+
+    Attributes:
+        bilin_quad (bool): Whether to use bilinear quadratic terms.
+        conv_in (nn.Conv2d): Convolutional layer for input.
+        conv_hidden (nn.Conv2d): Convolutional layer for hidden states.
+        bilin_1 (nn.Conv2d): Bilinear layer 1.
+        bilin_21 (nn.Conv2d): Bilinear layer 2 (part 1).
+        bilin_22 (nn.Conv2d): Bilinear layer 2 (part 2).
+        conv_out (nn.Conv2d): Convolutional layer for output.
+        down (nn.Module): Downsampling layer.
+        up (nn.Module): Upsampling layer.
+    """
+
+    def __init__(self, dim_in, dim_hidden, kernel_size=3, downsamp=None, bilin_quad=True, bias=True):
+        """
+        Initialize the BilinAEPriorCost module.
+
+        Args:
+            dim_in (int): Number of input dimensions.
+            dim_hidden (int): Number of hidden dimensions.
+            kernel_size (int, optional): Kernel size for convolutions. Defaults to 3.
+            downsamp (int, optional): Downsampling factor. Defaults to None.
+            bilin_quad (bool, optional): Whether to use bilinear quadratic terms. Defaults to True.
+        """
+        super().__init__()
+
+        self.conv_in_1 = torch.nn.Conv2d(dim_in, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+        self.conv_hidden_1 = torch.nn.Conv2d(dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+        self.conv_out_1 = torch.nn.Conv2d(dim_hidden, dim_in, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+
+    def forward_ae(self, x):
+        """
+        Perform the forward pass through the autoencoder.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor after passing through the autoencoder.
+        """
+        x1 = torch.nn.functional.relu( self.conv_in_1(x) )
+        x1 = self.conv_hidden_1(x1)
+        x1 = self.conv_out_1(torch.nn.functional.relu(x1))
+
+        return x1
+
+    def forward(self, state):
+        """
+        Compute the prior cost using the autoencoder.
+
+        Args:
+            state (torch.Tensor): The current state tensor.
+
+        Returns:
+            torch.Tensor: The computed prior cost.
+        """
+        return torch.nn.functional.mse_loss(state, self.forward_ae(state))
+
+class AEPriorCostTwoScale(torch.nn.Module):
+    """
+    A prior cost model using bilinear autoencoders.
+
+    Attributes:
+        bilin_quad (bool): Whether to use bilinear quadratic terms.
+        conv_in (nn.Conv2d): Convolutional layer for input.
+        conv_hidden (nn.Conv2d): Convolutional layer for hidden states.
+        bilin_1 (nn.Conv2d): Bilinear layer 1.
+        bilin_21 (nn.Conv2d): Bilinear layer 2 (part 1).
+        bilin_22 (nn.Conv2d): Bilinear layer 2 (part 2).
+        conv_out (nn.Conv2d): Convolutional layer for output.
+        down (nn.Module): Downsampling layer.
+        up (nn.Module): Upsampling layer.
+    """
+
+    def __init__(self, dim_in, dim_hidden, kernel_size=3, downsamp=None, bilin_quad=True, bias=True):
+        """
+        Initialize the BilinAEPriorCost module.
+
+        Args:
+            dim_in (int): Number of input dimensions.
+            dim_hidden (int): Number of hidden dimensions.
+            kernel_size (int, optional): Kernel size for convolutions. Defaults to 3.
+            downsamp (int, optional): Downsampling factor. Defaults to None.
+            bilin_quad (bool, optional): Whether to use bilinear quadratic terms. Defaults to True.
+        """
+        super().__init__()
+        self.bilin_quad = bilin_quad
+        self.conv_in = torch.nn.Conv2d(
+            dim_in, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+        self.conv_hidden = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+
+        self.conv_out = torch.nn.Conv2d(
+            dim_hidden, dim_in, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+
+
+        self.conv_in_lr = torch.nn.Conv2d(
+            dim_in, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+        self.conv_hidden_lr = torch.nn.Conv2d(
+            dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+
+        self.conv_out_lr = torch.nn.Conv2d(
+            dim_hidden, dim_in, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias
+        )
+
+
+        self.down = torch.nn.AvgPool2d(downsamp) if downsamp is not None else torch.nn.Identity()
+        self.up = (
+            torch.nn.UpsamplingBilinear2d(scale_factor=downsamp)
+            if downsamp is not None
+            else torch.nn.Identity()
+        )
+
+    def forward_ae(self, x):
+        """
+        Perform the forward pass through the autoencoder.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor after passing through the autoencoder.
+        """
+
+        # coarse-scale processing
+        x_ = self.down(x)
+        x_ = self.conv_in_lr(x_)
+        x_ = self.conv_hidden_lr(torch.nn.functional.relu(x_))
+        x_ = self.conv_out_lr(torch.nn.functional.relu(x_))
+        dx = self.up(x_)
+
+        # fine-scale processing
+        x = self.conv_in(x)
+        x = self.conv_hidden(torch.nn.functional.relu(x))
+        x = self.conv_out(torch.nn.functional.relu(x))
+
+        return x + dx
+
+    def forward(self, state):
+        """
+        Compute the prior cost using the autoencoder.
+
+        Args:
+            state (torch.Tensor): The current state tensor.
+
+        Returns:
+            torch.Tensor: The computed prior cost.
+        """
+        return torch.nn.functional.mse_loss(state, self.forward_ae(state))
+
+
+class AEPriorCostThreeScale(torch.nn.Module):
+    """
+    A prior cost model using bilinear autoencoders.
+
+    Attributes:
+        bilin_quad (bool): Whether to use bilinear quadratic terms.
+        conv_in (nn.Conv2d): Convolutional layer for input.
+        conv_hidden (nn.Conv2d): Convolutional layer for hidden states.
+        bilin_1 (nn.Conv2d): Bilinear layer 1.
+        bilin_21 (nn.Conv2d): Bilinear layer 2 (part 1).
+        bilin_22 (nn.Conv2d): Bilinear layer 2 (part 2).
+        conv_out (nn.Conv2d): Convolutional layer for output.
+        down (nn.Module): Downsampling layer.
+        up (nn.Module): Upsampling layer.
+    """
+
+    def __init__(self, dim_in, dim_hidden, kernel_size=3, downsamp=None, bilin_quad=True, bias=True):
+        """
+        Initialize the BilinAEPriorCost module.
+
+        Args:
+            dim_in (int): Number of input dimensions.
+            dim_hidden (int): Number of hidden dimensions.
+            kernel_size (int, optional): Kernel size for convolutions. Defaults to 3.
+            downsamp (int, optional): Downsampling factor. Defaults to None.
+            bilin_quad (bool, optional): Whether to use bilinear quadratic terms. Defaults to True.
+        """
+        super().__init__()
+
+        self.conv_in_1 = torch.nn.Conv2d(dim_in, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+        self.conv_hidden_1 = torch.nn.Conv2d(dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+        self.conv_out_1 = torch.nn.Conv2d(dim_hidden, dim_in, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+
+        self.conv_in_2 = torch.nn.Conv2d(dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+        self.conv_hidden_2 = torch.nn.Conv2d(dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+        self.conv_out_2 = torch.nn.Conv2d(dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+
+        self.conv_in_3 = torch.nn.Conv2d(dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+        self.conv_hidden_3 = torch.nn.Conv2d(dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+        self.conv_out_3 = torch.nn.Conv2d(dim_hidden, dim_hidden, kernel_size=kernel_size, padding=kernel_size // 2,bias=bias)
+
+        self.down = torch.nn.AvgPool2d(downsamp) if downsamp is not None else torch.nn.Identity()
+        self.up = (
+            torch.nn.UpsamplingBilinear2d(scale_factor=downsamp)
+            if downsamp is not None
+            else torch.nn.Identity()
+        )
+
+    def forward_ae(self, x):
+        """
+        Perform the forward pass through the autoencoder.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Output tensor after passing through the autoencoder.
+        """
+        x1 = torch.nn.functional.relu( self.conv_in_1(x) )
+        x2 = torch.nn.functional.relu( self.conv_in_2( self.down(x1) ) )
+        x3 = torch.nn.functional.relu( self.conv_in_3( self.down(x2) ) )
+
+        x3 = self.conv_hidden_3(x3)
+        x3 = self.conv_out_3(torch.nn.functional.relu(x3))
+
+        x2 = self.conv_hidden_3(x2) + self.up(x3)
+        x2 = self.conv_out_2(torch.nn.functional.relu(x2))
+
+        x1 = self.conv_hidden_2(x1) + self.up(x2)
+        x1 = self.conv_out_1(torch.nn.functional.relu(x1))
+
+        return x1
+
+    def forward(self, state):
+        """
+        Compute the prior cost using the autoencoder.
+
+        Args:
+            state (torch.Tensor): The current state tensor.
+
+        Returns:
+            torch.Tensor: The computed prior cost.
+        """
+        return torch.nn.functional.mse_loss(state, self.forward_ae(state))
 
 class UnetSolver2(UnetSolver):
     def __init__(self, dim_in, channel_dims, max_depth=None,dim_out=None,bias=True):

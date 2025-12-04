@@ -2,11 +2,11 @@ schema: '2.0'
 stages:
   inference:
     cmd: "python inferring.py +input=/Odyssey/public/data_challenge_ssh_ose/data/gridded_alongtrack/sla_filtered_0.25deg.nc
-      +checkpoint_path=../outputs/2025-11-22/glo12-sla-4th-unet15M-fm-v2-subgrad+state-5iter-ossev2-noiseg+u03-11-44-19/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
-      +config_path=../outputs/2025-11-22/glo12-sla-4th-unet15M-fm-v2-subgrad+state-5iter-ossev2-noiseg+u03-11-44-19/.hydra/config.yaml
-      +output_path=./output//glo12-sla-4th-unet15M-5iter-fm-subgrad+state-ossev2-noiseg+u03-3-to4th.nc
+      +checkpoint_path=../outputs/2025-12-01/glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03-21-32-51/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
+      +config_path=../outputs/2025-12-01/glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03-21-32-51/.hydra/config.yaml
+      +output_path=./output//glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03-2-to4th.nc
       +patch=15-648-512 +stride=1-200-244 +period_from=2018-12-01 +period_to=2020-01-31
       +input_var=sla_filtered +output_var=sla +output_geo_uv=false +normalization_type=none
       +obs_filtering=false +output_dc_format=true +ensemble_mean_from_noise=true +nb_steps_solver=5
-      +nb_steps_fm_ode=-1 +std_noise_input=0.0 +std_init_state=1.0 +batch_size=1 hydra.run.dir=.
+      +nb_steps_fm_ode=-1 +std_noise_input=0.2 +std_init_state=0.0 +batch_size=1 hydra.run.dir=.
       hydra.output_subdir=null hydra/job_logging=disabled hydra/hydra_logging=disabled\n"

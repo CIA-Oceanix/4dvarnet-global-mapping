@@ -1016,9 +1016,12 @@ class UNetModel(nn.Module):
         result = self.out(h)
         return result
 
-    def forward(self, batch, timesteps=None, extra=None):
-        x = batch.input
-        x = x.nan_to_num()
+    def forward(self, x, timesteps=None, extra=None):
+        #x = batch.input
+        #x = x.nan_to_num()
+
+        if ( self.dims == 3 ) and ( len(x.shape) == 4 ):
+            x = x.unsqueeze(1)  # add channel dim if missing
 
         if timesteps is None:
             timesteps = torch.zeros((x.shape[0],), device=x.device, dtype=torch.long)
@@ -1308,6 +1311,10 @@ class UNetModel2(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
+
+        if extra is None:
+            extra = []
+
         if self.with_fourier_features:
             z_f = base2_fourier_features(x, start=6, stop=8, step=1)
             x = torch.cat([x, z_f], dim=1)
