@@ -1,10 +1,10 @@
 # @package _global_
 #xpname: glo12-sla-4th-unet15M-unrolling-5iter-randinit-subgrad+state-ossev2-noiseg+u03
-xpname: glo12-sla-4th-unet3D-test-ossev1-noiseg+u03
+#xpname: glo12-sla-4th-unet3D-test-ossev1-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-fm-gradonly-ossev1-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-fm+e2e-subgrad+state-5iter-ossev2-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2-subgrad+state-ossev2-noiseg+u03
-#xpname: glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03
+xpname: glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2bis-obs+state-ossev2-noiseg+u03
 
 ckpt: null
@@ -67,6 +67,7 @@ model:
       _target_: contrib.4dvarnet_latent.models.GenericAEPriorCost
       model_ae:
         _target_: contrib.4dvarnet_latent.unet.UNetModel
+        dims: 2
         in_channels: 15 #${datamodule.xrds_kw.train.patch_dims.time}
         out_channels: ${datamodule.xrds_kw.train.patch_dims.time}
         model_channels: 32 #32
@@ -91,9 +92,9 @@ model:
       #use_grad_norm: true
       grad_model: 
         _target_: contrib.4dvarnet_latent.unet.UNetModel2
-        dims: 3
-        in_channels: 3 #45 #${datamodule.xrds_kw.train.patch_dims.time}
-        out_channels: 1 #${datamodule.xrds_kw.train.patch_dims.time}
+        dims: 2
+        in_channels: 45 #${datamodule.xrds_kw.train.patch_dims.time}
+        out_channels: 15 #${datamodule.xrds_kw.train.patch_dims.time}
         model_channels: 64 #32
         num_res_blocks: 2
         channel_mult: [1,2,4]
