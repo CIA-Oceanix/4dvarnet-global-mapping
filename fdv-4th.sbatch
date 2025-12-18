@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --partition=Odyssey                       
-#SBATCH --gres=gpu:h100:1                       # a100:1                       
+#SBATCH --gres=gpu:h200:1                       # a100:1                       
 #SBATCH --job-name=fdv+-pp-4th                
 #SBATCH --output=logs/Test-GPU_%j.log           
 #SBATCH --mem=100G
@@ -31,6 +31,7 @@ fi;
 #cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc $scrdir/
 #cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc $scrdir/
 cp --update=none /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_gridded_from_alongtrack.nc $scrdir/
+
 cd /Odyssey/private/rfablet/Python/4dvarnet-global-mapping
 #srun python main.py xp=glo12-sla-4th-unet domain=glorys
 #srun python main.py xp=glo12-sla-4th-fdv domain=glorys

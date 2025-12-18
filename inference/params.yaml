@@ -8,16 +8,16 @@ method:
   interp_on_mdt_grid: false #true
   ensemble_mean_from_noise: true #false #true 
   std_noise_input: 0.2 #0.20
-  nb_steps_solver: 5 #10
+  nb_steps_solver: 5 #10false
   nb_steps_fm_ode: -1 #0 for no ODE inference, >1 for ODE inference
-  std_init_state: 0. #0.0 #1.0
+  std_init_state: 0.1 #0.0 #1.0
 
 #  name: unet-4th-glo12-sla
 #  checkpoint: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/glo12-sla-4th-unet/checkpoints/best.ckpt
 #  config: ../outputs/2025-08-12/glo12-sla-4th-unet-12-52-27/.hydra/config.yaml
 
 #  name: unet-4th-glo12-sla-with-init
-#  checkpoint: ../outpxuts/2025-08-12/glo12-sla-4th-unet-with-init-12-52-56/glo12-sla-4th-unet-with-init/checkpoints/best.ckpt
+#  checkpoint: ../outputs/2025-08-12/glo12-sla-4th-unet-with-init-12-52-56/glo12-sla-4th-unet-with-init/checkpoints/best.ckpt
 #  config: ../outputs/2025-08-12/glo12-sla-4th-unet-with-init-12-52-56/.hydra/config.yaml
 
 #  name: unet-noise2-4th-glo12-sla-best2
@@ -384,10 +384,22 @@ method:
   #checkpoint: ../outputs/2025-12-01/glo12-sla-4th-unet15M-unrolling-aev1-5iter-v2bis-subgrad+state-ossev2-noiseg+u03-15-07-56/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
   #config: ../outputs/2025-12-01/glo12-sla-4th-unet15M-unrolling-aev1-5iter-v2bis-subgrad+state-ossev2-noiseg+u03-15-07-56/.hydra/config.yaml
 
-  #name: glo12-sla-4th-unet15M-unrolling-5iter-v2bis-obs+state-ossev2-noiseg+u03-0
+  #name: glo12-sla-4th-unet15M-unrolling-5iter-v2bis-obs+state-ossev2-noiseg+u03-1
   #checkpoint: ../outputs/2025-12-01/glo12-sla-4th-unet15M-unrolling-5iter-v2bis-obs+state-ossev2-noiseg+u03-14-52-04/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
   #config: ../outputs/2025-12-01/glo12-sla-4th-unet15M-unrolling-5iter-v2bis-obs+state-ossev2-noiseg+u03-14-52-04/.hydra/config.yaml
 
-  name: glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03-3
-  checkpoint: ../outputs/2025-12-01/glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03-21-32-51/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
-  config: ../outputs/2025-12-01/glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03-21-32-51/.hydra/config.yaml
+  #name: glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03-5
+  #checkpoint: ../outputs/2025-12-01/glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03-21-32-51/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
+  #config: ../outputs/2025-12-01/glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03-21-32-51/.hydra/config.yaml
+
+  #name: glo12-sla-4th-unet15M-unrolling-aeunet-randinit-5iter-subgrad+state-ossev2-noiseg+u03-5
+  #checkpoint: ../outputs/2025-12-04/glo12-sla-4th-unet15M-unrolling-aeunet-randinit-5iter-subgrad+state-ossev2-noiseg+u03-23-56-02/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
+  #config: ../outputs/2025-12-04/glo12-sla-4th-unet15M-unrolling-aeunet-randinit-5iter-subgrad+state-ossev2-noiseg+u03-23-56-02/.hydra/config.yaml  
+
+  name: glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03-5
+  checkpoint: ../outputs/2025-12-13/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03-10-44-40/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
+  config: ../outputs/2025-12-13/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03-10-44-40/.hydra/config.yaml 
+
+  #name: glo12-sla-4th-unet15M-unrolling-aeunet_32_2_64_2-randinit-5iter-subgrad+state-ossev2-noiseg+u03-0
+  #checkpoint: ../outputs/2025-12-14/glo12-sla-4th-unet15M-unrolling-aeunet_32_2_64_2-randinit-5iter-subgrad+state-ossev2-noiseg+u03-21-55-36/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
+  #config: ../outputs/2025-12-14/glo12-sla-4th-unet15M-unrolling-aeunet_32_2_64_2-randinit-5iter-subgrad+state-ossev2-noiseg+u03-21-55-36/.hydra/config.yaml  

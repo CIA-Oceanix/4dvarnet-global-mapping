@@ -422,6 +422,8 @@ class GradSolverZeroInit_withStep(GradSolver):
         Returns:
             torch.Tensor: Updated state.
         """
+
+
         var_cost = self.prior_cost(state) + self.lbd**2 * self.obs_cost(state, batch)
         grad = torch.autograd.grad(var_cost, state, create_graph=True)[0]
 
@@ -504,6 +506,7 @@ class GradSolver_withStep(GradSolver):
 
         if hasattr(self, 'std_init') is True :
             x0 = self.std_init * torch.randn_like(batch.input)
+            #print('xxxx'+str(self.std_init), flush=True)
             return x0.detach().requires_grad_(True)
         else:
             return torch.zeros_like(batch.input).detach().requires_grad_(True)
@@ -553,6 +556,7 @@ class GradSolver_withStep(GradSolver):
 
         if 'subgrad' in self.input_grad_update :
             gobs = (batch.input-state).nan_to_num()
+
             gprior = state - self.prior_cost.forward_ae(state)
             grad = torch.concatenate((self.format2D_3D(gobs),self.format2D_3D(gprior)),dim=1)
 
@@ -1278,8 +1282,12 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
         loss_mse = self.loss_mse(batch,out,phase)
         loss_prior = self.loss_prior(batch,out.detach(),phase)
 
-        training_loss = self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1]
-        training_loss += self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1]
+        if phase == 'train':
+            training_loss = self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1]
+            training_loss += self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1]
+        else:
+            training_loss = ( self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1] ) / ( self.w_mse * loss_mse[0] + self.w_grad_mse )
+            training_loss *= 100.**2 * self.norm_stats[phase][1] ** 2
 
         with torch.no_grad():
             self.log(
@@ -1338,6 +1346,53 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
         """
         return self.solver(batch)
     
+
+class Lit4dVarNetIgnoreNaN_MergeTimeSteps(Lit4dVarNetIgnoreNaN):
+    def __init__(self,  
+                 w_mse,w_grad_mse, w_mse_lr, w_grad_mse_lr, w_prior,
+                 use_fm_learning=False,
+                 *args, **kwargs):
+
+        super().__init__(w_mse,w_grad_mse, w_mse_lr, w_grad_mse_lr, w_prior,*args, **kwargs)
+
+        
+    def forward(self, batch, phase='test'):
+        """
+        Forward pass through the solver.
+
+        Args:
+            batch (dict): Input batch.
+
+        Returns:
+            torch.Tensor: Solver output.
+        """
+
+        dt = int(batch.input.shape[1] / 3 )
+
+        input_ = torch.cat( ( batch.input[:,0:dt,:,:].nanmean(dim=1, keepdim=True) ,
+                              batch.input[:,dt:2*dt,:,:] ,
+                              batch.input[:,2*dt:3*dt,:,:].nanmean(dim=1, keepdim=True)  ) , dim =1 )
+        
+        #print( '\n input  shape in merge time steps:', batch.input.shape, flush=True)
+        #print( '\n input_ shape in merge time steps:', input_.shape, flush=True)
+
+        batch_ = TrainingItem( input = input_, tgt = None )
+
+        return self.solver(batch_)
+
+    def step(self, batch, phase):
+
+        dt = int(batch.input.shape[1] / 3 )
+
+        tgt_ = torch.cat( ( batch.tgt[:,0:dt,:,:].nanmean(dim=1, keepdim=True) ,
+                              batch.tgt[:,dt:2*dt,:,:] ,
+                              batch.tgt[:,2*dt:3*dt,:,:].nanmean(dim=1, keepdim=True)  ) , dim =1 )
+ 
+        batch_ = TrainingItem( input = batch.input, tgt = tgt_ )
+
+        return super().step(batch_, phase)
+
+
 class Lit4dVarNetIgnoreNaN_FM(Lit4dVarNetIgnoreNaN):
     def __init__(self,  
                  w_mse,w_grad_mse, w_mse_lr, w_grad_mse_lr, w_prior,
