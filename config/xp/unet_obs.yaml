@@ -1,0 +1,126 @@
+# @package _global_
+#xpname: glo12-sla-4th-unet15M-unrolling-5iter-randinit-subgrad+state-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unnrolling-test-ossev1-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-fm-gradonly-ossev1-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-fm+e2e-subgrad+state-5iter-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2-subgrad+state-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-unrolling-aeunet-mergedtimesteps-5iter-subgrad+state-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03
+xpname: glo12-sla-4th-unet15M-aeunet_96_3-obs-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2bis-obs+state-ossev2-noiseg+u03
+
+ckpt: null
+#ckpt: ./outputs/2025-12-04/glo12-sla-4th-unet15M-unrolling-aeunet-randinit-5iter-subgrad+state-ossev2-noiseg+u03-23-56-02/glo12-sla-4th-unrolling-ossev1/checkpoints/last.ckpt
+#config_path: ./outputs/2025-12-04/glo12-sla-4th-unet15M-unrolling-aeunet-randinit-5iter-subgrad+state-ossev2-noiseg+u03-23-56-02/.hydra/config.yaml
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  inference_mode: false
+  deterministic: true
+  gradient_clip_val: 0.5
+  accelerator: gpu
+  devices: 1
+  logger:
+    _target_: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+    save_dir: ${hydra:runtime.output_dir}
+    name: ${hydra:runtime.choices.xp}
+    version: ''
+  max_epochs: 2000
+  limit_train_batches: 100
+  callbacks:
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    monitor: val_loss
+    save_last: true
+    save_top_k: 3
+    filename: '{val_loss:.5f}-{epoch:03d}'
+  check_val_every_n_epoch: 3
+  accumulate_grad_batches: 1
+
+datamodule:  
+  _target_: contrib.glorys12.DistinctNormDataModulewInputTracks
+  input_da:
+    _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
+    tgt_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_gridded_from_alongtrack.nc #glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc
+    inp_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_gridded_from_alongtrack.nc #glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc #/Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc
+    inp_var: obs #sla
+    tgt_var: tgt #sla
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-31']}
+    test: null
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, lat: 256, lon: 256}
+      strides: {time: 1, lat: 196, lon: 154}
+      domain_limits: ${domain.train}
+      noise: 0.03
+      noise_type: gaussian+uniform # spatial-perturb # 
+    val:
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 136, lon: 488}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: gaussian+uniform #uniform-constant #null # #uniform-constant spatial-perturb
+  dl_kw: {batch_size: 8, num_workers: 4}
+  norm_stats:  # norm values from tgt
+    train:
+    - -0.001930378327255099
+    - 0.08604745118775728
+    val:
+    - 0.01560162689028551
+    - 0.08583080433051968
+  #dl_kw: {batch_size: 4, num_workers: 4}
+
+model:
+  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN #Lit4dVarNetIgnoreNaN_MergeTimeSteps # #_FM_E2E
+  w_mse: 50.
+  w_grad_mse: 1000.
+  w_prior: 1. #1.
+  persist_rw: false
+  no_prior: true
+  opt_fn:
+    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
+    _partial_: true
+    lr: 0.0001
+    T_max: ${trainer.max_epochs}
+  rec_weight:
+    _target_: ocean4dvarnet.utils.get_triang_time_wei
+    patch_dims: ${datamodule.xrds_kw.train.patch_dims}
+    crop: {time: 0, lat: 4, lon: 4}
+  val_rec_weight:
+    _target_: ocean4dvarnet.utils.get_triang_time_wei
+    patch_dims: ${datamodule.xrds_kw.val.patch_dims}
+    crop: {time: 0, lat: 4, lon: 4}
+  norm_stats: ${datamodule.norm_stats}
+  w_mse_lr: 0.
+  w_grad_mse_lr: 0
+  osse_with_interp_error: false #true
+  #use_fm_learning: true
+  solver:
+      _target_: contrib.4dvarnet_latent.unet.UNetModel2
+      dims: 2
+      in_channels: 15 #45 #${datamodule.xrds_kw.train.patch_dims.time}
+      out_channels: 15 #15 #${datamodule.xrds_kw.train.patch_dims.time}
+      model_channels: 96 #96 #64 #32
+      num_res_blocks: 3 #3 #2
+      channel_mult: [1,2,4]
+      attention_resolutions: []
+      use_checkpoint: true
+      dropout: 0.1
+      bias: false #true #
+      interp_mode: 'bilinear' #'nearest' # 
+entrypoints:
+  - _target_: pytorch_lightning.seed_everything
+    seed: 333 #111 #
+  - _target_: contrib.glorys12.train
+    trainer: ${trainer}
+    lit_mod: ${model}
+    dm: ${datamodule}
+    ckpt: ${ckpt}
+defaults:
+  - /domain: glorys
+  - _self_

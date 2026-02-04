@@ -566,6 +566,18 @@ class GradSolver_withStep(GradSolver):
             if 'previous' in self.input_grad_update :
                 grad = torch.concatenate((grad,self.format2D_3D(self.h_state)),dim=1)
 
+        elif 'gradsplit' in self.input_grad_update :
+            prior_cost = self.prior_cost(state)
+            obs_cost = self.obs_cost(state, batch)
+            # Compute full gradient
+            grad_prior = torch.autograd.grad(prior_cost, state, create_graph=True)[0]
+            grad_obs = torch.autograd.grad(obs_cost, state, create_graph=True)[0]
+            grad = torch.concatenate((grad_prior, grad_obs),dim=1)
+            if 'state' in self.input_grad_update :
+                grad = grad / ((grad**2).mean().sqrt().detach())
+                grad = torch.concatenate((grad,state),dim=1)   
+
+
         elif 'grad' in self.input_grad_update :
             var_cost = self.prior_cost(state) + self.lbd**2 * self.obs_cost(state, batch)
             grad = torch.autograd.grad(var_cost, state, create_graph=True)[0]
@@ -575,7 +587,8 @@ class GradSolver_withStep(GradSolver):
             #grad = grad / self.grad_mod._grad_norm
 
             if 'state' in self.input_grad_update :
-                grad = torch.concatenate((  self.format2D_3D(grad),self.format2D_3D(state)),dim=1)
+                grad = grad / ((grad**2).mean().sqrt().detach())
+                grad = torch.concatenate((  grad,self.format2D_3D(state)),dim=1)
 
             if 'previous' in self.input_grad_update :
                 grad = torch.concatenate((grad,self.format2D_3D(self.h_state)),dim=1)
@@ -1128,7 +1141,7 @@ class GradSolverWithLatent(GradSolver):
 
 class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
     def __init__(self,  
-                 w_mse,w_grad_mse, w_mse_lr, w_grad_mse_lr, w_prior,
+                 w_mse,w_grad_mse, w_mse_lr, w_grad_mse_lr, w_prior, no_prior=False,
                  *args, **kwargs):
         _val_rec_weight = kwargs.pop(
             "val_rec_weight",
@@ -1136,7 +1149,7 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
         )
 
         self.osse_with_interp_error = kwargs.pop("osse_with_interp_error",False)
-
+        self.no_prior = no_prior
         print('osse_with_interp_error:', self.osse_with_interp_error)
 
         super().__init__(*args, **kwargs)
@@ -1280,7 +1293,10 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
         loss, out = self.base_step(batch_, phase)
 
         loss_mse = self.loss_mse(batch,out,phase)
-        loss_prior = self.loss_prior(batch,out.detach(),phase)
+        if self.no_prior: 
+            loss_prior = ( torch.tensor(0.,device=out.device), torch.tensor(0.,device=out.device) )
+        else:
+            loss_prior = self.loss_prior(batch,out.detach(),phase)
 
         if phase == 'train':
             training_loss = self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1]

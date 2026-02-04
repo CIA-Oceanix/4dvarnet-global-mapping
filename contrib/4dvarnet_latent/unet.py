@@ -140,7 +140,7 @@ def checkpoint(func, inputs, params, flag):
     """
     if flag:
         # Use pytorch's activation checkpointing.  This has support for fp16 autocast
-        return torch.utils.checkpoint.checkpoint(func, *inputs)
+        return torch.utils.checkpoint.checkpoint(func, *inputs,use_reentrant=False)
         # args = tuple(inputs) + tuple(params)
         # return CheckpointFunction.apply(func, len(inputs), *args)
     else:
