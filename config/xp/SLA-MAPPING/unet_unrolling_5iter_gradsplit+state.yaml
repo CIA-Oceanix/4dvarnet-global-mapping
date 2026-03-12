@@ -7,10 +7,13 @@
 #xpname: glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-unrolling-aeunet-mergedtimesteps-5iter-subgrad+state-ossev2-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03
-xpname: glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-gradsplit-ossev2-noiseg+u03
+xpname: glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-gradsplit+state-ossev2-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2bis-obs+state-ossev2-noiseg+u03
 
-ckpt: null
+#ckpt: null
+ckpt: /Odyssey/private/p25denai/4dvarnet-ronan_dev/outputs/2026-01-23/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-gradsplit+state-ossev2-noiseg+u03-23-34-43/unet_unrolling_5iter_gradsplit+state/checkpoints/last.ckpt
+config_path: /Odyssey/private/p25denai/4dvarnet-ronan_dev/outputs/2026-01-23/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-gradsplit+state-ossev2-noiseg+u03-23-34-43/.hydra/config.yaml
+
 #ckpt: ./outputs/2025-12-04/glo12-sla-4th-unet15M-unrolling-aeunet-randinit-5iter-subgrad+state-ossev2-noiseg+u03-23-56-02/glo12-sla-4th-unrolling-ossev1/checkpoints/last.ckpt
 #config_path: ./outputs/2025-12-04/glo12-sla-4th-unet15M-unrolling-aeunet-randinit-5iter-subgrad+state-ossev2-noiseg+u03-23-56-02/.hydra/config.yaml
 
@@ -73,7 +76,7 @@ model:
     n_step: 5 #2 #5 #10
     lr_grad: 0. #1e3
     std_init: 0.1
-    input_grad_update: 'gradsplit' #'obs+state' ##'grad-only' #'grad+state' #'obs-only'  # 'grad+previous'  #'gobs+sgprior' #'grad+state'  #'grad-only' #'grad+state'  #'grad+state' #    
+    input_grad_update: 'gradsplit+state' #'obs+state' ##'grad-only' #'grad+state' #'obs-only'  # 'grad+previous'  #'gobs+sgprior' #'grad+state'  #'grad-only' #'grad+state'  #'grad+state' #    
     # lr_grad: 0.2
     prior_cost:
       _target_: contrib.4dvarnet_latent.models.GenericAEPriorCost
@@ -105,7 +108,7 @@ model:
       grad_model: 
         _target_: contrib.4dvarnet_latent.unet.UNetModel2
         dims: 2
-        in_channels: 30 #45 #${datamodule.xrds_kw.train.patch_dims.time}
+        in_channels: 45 #45 #${datamodule.xrds_kw.train.patch_dims.time}
         out_channels: 15 #15 #${datamodule.xrds_kw.train.patch_dims.time}
         model_channels: 96 #96 #64 #32
         num_res_blocks: 3 #3 #2
@@ -135,17 +138,17 @@ model:
 entrypoints:
   - _target_: pytorch_lightning.seed_everything
     seed: 333 #111 #
-  - _target_: contrib.glorys12.train
+  #- _target_: contrib.glorys12.train
+  #  trainer: ${trainer}
+  #  lit_mod: ${model}
+  #  dm: ${datamodule}
+  #  ckpt: ${ckpt}
+  - _target_: contrib.glorys12.train_from_pretrained_model
     trainer: ${trainer}
     lit_mod: ${model}
     dm: ${datamodule}
-    ckpt: ${ckpt}
-#  - _target_: contrib.glorys12.train_from_pretrained_model
-#    trainer: ${trainer}
-#    lit_mod: ${model}
-#    dm: ${datamodule}
-#    config_path: ${config_path}
-#    ckpt_path: ${ckpt}
+    config_path: ${config_path}
+    ckpt_path: ${ckpt}
 defaults:
   - glo12-sla-4th-unet
   - _self_

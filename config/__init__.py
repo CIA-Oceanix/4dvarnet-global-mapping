@@ -1,6 +1,13 @@
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
 
+def last_resolver(x):
+    if isinstance(x, list):
+        return x[-1]
+    return x
+
+OmegaConf.register_new_resolver("last", last_resolver)
+
 OmegaConf.register_new_resolver(
     "_singleton",
     lambda k: dict(
@@ -31,6 +38,7 @@ class SingletonStore:
 cs = ConfigStore.instance()
 
 domains = {
+    "l96_sim_40": dict(lon=[-1, 1],lat=[0,40]),
     "glorys": dict(lon=[-180, 180], lat=[-80, 90]),
     "glorys+": dict(lon=[0, 180], lat=[-80, 90]),
     "eNATL": dict(lon=[-100, 42], lat=[7, 69]),

@@ -2,11 +2,14 @@ from cmath import phase
 from collections import namedtuple
 import functools as ft
 import time
-
+import matplotlib.pyplot as plt
+import random
 import numpy as np
 import torch
 import kornia.filters as kfilts
 import xarray as xr
+from pathlib import Path
+
 #from torchvision.transforms import v2
 
 from ocean4dvarnet.data import BaseDataModule, TrainingItem
@@ -1141,7 +1144,7 @@ class GradSolverWithLatent(GradSolver):
 
 class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
     def __init__(self,  
-                 w_mse,w_grad_mse, w_mse_lr, w_grad_mse_lr, w_prior, no_prior=False,
+                 w_mse,w_grad_mse, w_mse_lr, w_grad_mse_lr, w_prior, no_prior=False, plot_batches=False,
                  *args, **kwargs):
         _val_rec_weight = kwargs.pop(
             "val_rec_weight",
@@ -1167,6 +1170,11 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
         self.w_mse_lr = w_mse_lr
         self.w_grad_mse_lr = w_grad_mse_lr
         self.w_prior = w_prior
+        self.plot_batches = plot_batches
+        self._train_batch_example = None
+        self._val_batch_example = None
+        self._train_out_example = None
+        self._val_out_example = None
 
     def get_rec_weight(self, phase):
         rec_weight = self.rec_weight
@@ -1174,19 +1182,106 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
             rec_weight = self.val_rec_weight
         return rec_weight
 
+    # def training_step(self, batch, batch_idx):
+    #     if batch_idx == 0 and self.plot_batches:
+    #         self._train_batch_example = batch
+    #     loss = super().training_step(batch, batch_idx)
+    #     if loss is None:
+    #         self._n_rejected_batches += 1
+    #     return loss
+
+    # def validation_step(self, batch, batch_idx):
+    #     if batch_idx == 0 and self.plot_batches:
+    #         self._val_batch_example = batch
+    #     loss = super().validation_step(batch, batch_idx)
+    #     return loss
+
     def training_step(self, batch, batch_idx):
-        loss = super().training_step(batch, batch_idx)
+        loss, out = self.step(batch, "train")
+        if batch_idx == 0 and self.plot_batches:
+            self._train_batch_example = batch
+            self._train_out_example = out
         if loss is None:
             self._n_rejected_batches += 1
         return loss
 
+    def validation_step(self, batch, batch_idx):
+        loss, out = self.step(batch, "val")
+        if batch_idx == 0 and self.plot_batches:
+            self._val_batch_example = batch
+            self._val_out_example = out
+        if loss is None:
+            self._n_rejected_batches += 1
+        return loss
+
+
     def on_train_epoch_end(self):
+
+        if self._train_batch_example is not None:
+            self.plot_random_window(self._train_batch_example, self._train_out_example, "train")
+
         self.log(
             "n_rejected_batches",
             self._n_rejected_batches,
             on_step=False,
             on_epoch=True,
         )
+
+
+
+    def on_validation_epoch_end(self):
+
+        if self._val_batch_example is not None:
+            self.plot_random_window(self._val_batch_example, self._val_out_example, "val")
+
+
+
+    def plot_random_window(self, batch, out, name):
+
+        tgt = batch.tgt.detach().cpu()
+        inp = batch.input.detach().cpu()
+        out = out.detach().cpu()
+
+        B, T, H, L = inp.shape  # ex: 32,1,2048,32
+        wh, wl = (50, 30)
+
+        b = random.randint(0, B-1)
+        t = random.randint(0, T-1)
+        h0 = random.randint(0, H-wh)
+        l0 = random.randint(0, L-wl)
+
+        window_tgt = tgt[b, t, h0:h0+wh, l0:l0+wl]
+        window_inp = inp[b, t, h0:h0+wh, l0:l0+wl]
+        window_out = out[b, t, h0:h0+wh, l0:l0+wl]
+
+        # même échelle pour comparaison
+        vmin = min(window_tgt.min(), window_inp.min(), window_out.min())
+        vmax = max(window_tgt.max(), window_inp.max(), window_out.max())
+
+        out_dir = Path("/Odyssey/private/p25denai/4dvarnet-ronan_dev/plots")
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        fig, axs = plt.subplots(1, 3, figsize=(12, 3))
+
+        im0 = axs[0].imshow(window_inp, origin="lower", vmin=vmin, vmax=vmax)
+        axs[0].set_title("input")
+
+        im1 = axs[1].imshow(window_tgt, origin="lower", vmin=vmin, vmax=vmax)
+        axs[1].set_title("target")
+
+        im2 = axs[2].imshow(window_out, origin="lower", vmin=vmin, vmax=vmax)
+        axs[2].set_title("output")
+
+        fig.colorbar(im2, ax=axs, shrink=0.7)
+
+        fig.suptitle(f"{name} epoch {self.current_epoch} | b={b} t={t}")
+
+        fname = out_dir / f"{name}_epoch{self.current_epoch}_b{b}_t{t}.png"
+        plt.savefig(fname, dpi=150, bbox_inches="tight")
+        plt.close()
+
+
+
 
     def sample_osse_data_with_l3interp_errr(self,batch):
         # to be implemented in child class if needed
@@ -1253,6 +1348,7 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
 
 
     def loss_mse(self,batch,out,phase):
+
         loss =  self.weighted_mse(out - batch.tgt,
             self.get_rec_weight(phase),
         )

@@ -1,0 +1,132 @@
+# @package _global_
+
+
+xpname: l96-unet15M-aeunet_96_3-obs
+#xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2bis-obs+state-ossev2-noiseg+u03
+
+ckpt: null
+
+paths:
+    l96_dir: /Odyssey/public/l96_dataset/
+    l96_trajectories: 
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_1.nc
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_2.nc
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_3.nc
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_4.nc
+    src: /Odyssey/private/p25denai/4dvarnet-ronan_dev
+
+hydra:
+  run:
+    dir: ${paths.src}/results/${now:%Y-%m-%d}/${now:%H:%M:%S}
+
+xp_name: ${last:${hydra:runtime.choices.xp}}
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  inference_mode: False
+  gradient_clip_val: 0.5
+  accelerator: gpu
+  devices: 1
+  logger:
+    _target_: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+    save_dir: ${hydra:runtime.output_dir}
+    name: ${xp_name}
+    version: ''
+  max_epochs: 10
+  callbacks:
+    - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    # 🔹 Sauvegarde du meilleur modèle 
+    - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+      monitor: val_loss
+      mode: min
+      save_top_k: 1
+      filename: 'best'
+      save_last: True   # optionnel : garde aussi le dernier
+    - _target_: pytorch_lightning.callbacks.RichProgressBar
+      leave: True
+    - _target_: pytorch_lightning.callbacks.RichModelSummary
+      max_depth: 2
+  check_val_every_n_epoch: 3
+  accumulate_grad_batches: 1
+
+datamodule:
+  _target_: contrib.L96.data.MultiTrajDataModule
+  input_das: 
+    _target_: contrib.L96.utils.load_l96_data_multi
+    paths: ${paths.l96_trajectories} 
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: [20000, 80000]}
+    val: 
+      time: {_target_: builtins.slice, _args_: [11000, 19000]}
+    test: 
+      time: {_target_: builtins.slice,  _args_: [1000, 10000]}
+  xrds_kw:
+    patch_dims: { time: 200, lat: 40, lon: 1}
+    strides: { time: 50, lat: 40, lon: 1}
+    domain_limits: ${domain.train}
+  dl_kw: {batch_size: 32, num_workers: 2}
+  aug_kw:
+    aug_factor: 2
+    aug_only: True
+    noise_sigma: 0.03
+
+model:
+  _target_: contrib.L96.models.LitUnet_like_4dVarNet
+  persist_rw: False
+  opt_fn:
+    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
+    _partial_: true
+    lr: 1e-4
+    T_max: ${trainer.max_epochs}
+  rec_weight:
+      _target_: contrib.L96.utils.get_constant_time_wei
+      patch_dims: ${datamodule.xrds_kw.patch_dims}
+      crop: {time: 0, lat: 0, lon: 0}
+      offset: 0
+  solver:
+      _target_: contrib.4dvarnet_latent.unet.UNetModel2
+      dims: 2
+      in_channels: 1
+      out_channels: 1
+      model_channels: 8 #96 #64 #32
+      num_res_blocks: 1 #3 #2
+      channel_mult: [1,2]
+      attention_resolutions: []
+      use_checkpoint: true
+      dropout: 0.1
+      bias: false #
+      interp_mode: 'bilinear' #'nearest' # 
+
+       
+  test_metrics: ${metrics.test_metrics}
+  pre_metric_fn: 
+        _target_: xarray.Dataset.sel
+        _partial_: True
+        time: {_target_: builtins.slice, _args_: [500, 9000]}
+        lat: ${domain.test.lat}
+        lon: ${domain.test.lon}
+
+
+metrics:
+  nrmse_scores: {_target_: ocean4dvarnet.utils.rmse_based_scores_from_ds, _partial_: True}
+  psd_scores: {_target_: ocean4dvarnet.utils.psd_based_scores_from_ds, _partial_: True}
+  get0: {_target_: operator.itemgetter, _args_: [0]}
+  get1: {_target_: operator.itemgetter, _args_: [1]}
+  test_metrics:
+    'mu': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.nrmse_scores}', '${metrics.get0}']}
+    'sig': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.nrmse_scores}', '${metrics.get1}']}
+    'lx': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.psd_scores}', '${metrics.get0}']}
+    'lt': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.psd_scores}', '${metrics.get1}']}
+
+entrypoints:
+  - _target_: pytorch_lightning.seed_everything
+    seed: 333
+  - _target_: ocean4dvarnet.train.base_training
+    trainer: ${trainer}
+    lit_mod: ${model}
+    dm: ${datamodule}
+
+defaults:
+  - /domain: l96_sim_40
+  - _self_
