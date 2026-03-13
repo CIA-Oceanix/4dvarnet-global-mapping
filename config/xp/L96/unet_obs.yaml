@@ -32,7 +32,7 @@ trainer:
     save_dir: ${hydra:runtime.output_dir}
     name: ${xp_name}
     version: ''
-  max_epochs: 10
+  max_epochs: 300
   callbacks:
     - _target_: pytorch_lightning.callbacks.LearningRateMonitor
     # 🔹 Sauvegarde du meilleur modèle 
@@ -80,7 +80,7 @@ model:
     lr: 1e-4
     T_max: ${trainer.max_epochs}
   rec_weight:
-      _target_: contrib.L96.utils.get_constant_time_wei
+      _target_: contrib.L96.utils.get_triang_time_wei
       patch_dims: ${datamodule.xrds_kw.patch_dims}
       crop: {time: 0, lat: 0, lon: 0}
       offset: 0
@@ -103,21 +103,18 @@ model:
   pre_metric_fn: 
         _target_: xarray.Dataset.sel
         _partial_: True
-        time: {_target_: builtins.slice, _args_: [500, 9000]}
+        time: {_target_: builtins.slice, _args_: [1000, 10000]}
         lat: ${domain.test.lat}
         lon: ${domain.test.lon}
 
 
 metrics:
-  nrmse_scores: {_target_: ocean4dvarnet.utils.rmse_based_scores_from_ds, _partial_: True}
-  psd_scores: {_target_: ocean4dvarnet.utils.psd_based_scores_from_ds, _partial_: True}
+  nrmse_scores: {_target_: contrib.L96.utils.rmse_based_scores, _partial_: True}
   get0: {_target_: operator.itemgetter, _args_: [0]}
   get1: {_target_: operator.itemgetter, _args_: [1]}
+  get2: {_target_: operator.itemgetter, _args_: [2]}
   test_metrics:
-    'mu': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.nrmse_scores}', '${metrics.get0}']}
-    'sig': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.nrmse_scores}', '${metrics.get1}']}
-    'lx': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.psd_scores}', '${metrics.get0}']}
-    'lt': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.psd_scores}', '${metrics.get1}']}
+    'rmse': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.nrmse_scores}', '${metrics.get2}']}
 
 entrypoints:
   - _target_: pytorch_lightning.seed_everything

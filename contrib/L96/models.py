@@ -73,17 +73,20 @@ class Lit4dVarNet(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         if batch_idx == 0:
             self.test_data = []
+        
         out = self(batch=batch)
         m, s = self.norm_stats
 
+        # Réarranger les dimensions : (B,C,H,W) -> (B,H,W,C)
+        batch_input = (batch.input.cpu() * s + m).permute(0, 2, 3, 1)
+        batch_tgt = (batch.tgt.cpu() * s + m).permute(0, 2, 3, 1)
+        out_data = (out.squeeze(dim=-1).detach().cpu() * s + m).permute(0, 2, 3, 1)
+
         self.test_data.append(torch.stack(
-            [
-                batch.input.cpu() * s + m,
-                batch.tgt.cpu() * s + m,
-                out.squeeze(dim=-1).detach().cpu() * s + m,
-            ],
-            dim=1,
+            [batch_input, batch_tgt, out_data],
+            dim=1
         ))
+
 
     @property
     def test_quantities(self):

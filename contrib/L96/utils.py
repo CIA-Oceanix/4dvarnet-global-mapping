@@ -120,3 +120,34 @@ def load_l96_data_identity(path, obs_from_tgt=False):
 def load_l96_data_multi(paths):
     """Load multiple trajectory netCDFs, return list of DataArrays"""
     return [load_l96_data(p) for p in paths]
+
+
+
+def rmse_based_scores(ds):
+
+    da_rec = ds["out"]
+    da_ref = ds["tgt"]
+    da_input = ds["inp"]
+
+    # RMSE globale
+    rmse = np.sqrt(((da_rec - da_ref) ** 2).mean())
+
+    # RMSE normalisée par timestep
+    rmse_t = (
+        np.sqrt(((da_rec - da_ref) ** 2).mean(dim=("lon", "lat")))
+        / np.sqrt((da_ref ** 2).mean(dim=("lon", "lat")))
+    )
+
+    std = rmse_t.std()
+
+    # masque pixels manquants
+    mask_missing = da_input.isnull()
+
+    # RMSE uniquement sur pixels manquants
+    rmse_missing = np.sqrt(((da_rec - da_ref) ** 2).where(mask_missing).mean())
+
+    return (
+        np.round(rmse.values, 5).item(),
+        np.round(std.values, 5).item(),
+        np.round(rmse_missing.values, 5).item(),
+    )

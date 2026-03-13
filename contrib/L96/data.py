@@ -139,6 +139,14 @@ class XrDataset(torch.utils.data.Dataset):
             weight = np.ones(list(self.patch_dims.values()))
         w = xr.DataArray(weight, dims=list(self.patch_dims.keys()))
 
+        #Re positionner les axes de w
+        w = w.rename({
+            "time": "lon",
+            "lat": "time",
+            "lon": "lat"
+            })
+        w = w.transpose("time", "lat", "lon")
+
         coords = self.get_coords()
 
         new_dims = [f'v{i}' for i in range(len(items[0].shape) - len(coords[0].dims))]
@@ -158,6 +166,14 @@ class XrDataset(torch.utils.data.Dataset):
         count_da = xr.zeros_like(rec_da)
 
         for da in das:
+            # print(da.coords)
+            # print("rec_da shape:", rec_da.sel(da.coords).shape)
+            # print("da shape:", da.shape)
+            # print("w shape:", w.shape)
+            # print("rec dims:", rec_da.dims)
+            # print("da dims:", rec_da.dims)
+            # print("w dims:", w.dims)
+            # print('rec da coords:', (rec_da.sel(da.coords) + da * w).shape)
             rec_da.loc[da.coords] = rec_da.sel(da.coords) + da * w
             count_da.loc[da.coords] = count_da.sel(da.coords) + w
 
