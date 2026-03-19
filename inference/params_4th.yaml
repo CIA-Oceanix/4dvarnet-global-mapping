@@ -11,8 +11,10 @@ exp:
 dims:
   #patch: 15-648-1488
   #stride: 1-200-200
-  patch: 15-648-512
-  stride: 1-200-244
+  patch: 15-648-768
+  stride: 1-200-720
+  #patch: 15-648-512
+  #stride: 1-200-244
   #patch: 15-512-512
   #stride: 1-136-244
   res: .25

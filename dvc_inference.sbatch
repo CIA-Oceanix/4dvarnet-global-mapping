@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --partition=Odyssey                       
-#SBATCH --gres=gpu:a100:1                       # a100:1                       
+#SBATCH --gres=gpu:h200:1                       # a100:1                       
 #SBATCH --job-name=inference                   
 #SBATCH --output=logs/Test-GPU_%j.log           
 #SBATCH --mem=100G

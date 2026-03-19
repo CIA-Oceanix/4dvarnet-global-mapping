@@ -7,7 +7,9 @@
 #xpname: glo12-sla-4th-unet15M-unrolling-aeunet-5iter-subgrad+state-ossev2-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-unrolling-aeunet-mergedtimesteps-5iter-subgrad+state-ossev2-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03
-xpname: glo12-sla-4th-unet15M-unrolling-aeunet_32_2_64_2-randinit-5iter-subgrad+state-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-fm-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03
+xpname: glo12-sla-4th-unet15M-fm-unrolling-aeunet_32_2_64_2-randinit-5iter-subgrad+state-ossev2-noiseg+u03
+#xpname: glo12-sla-4th-unet15M-unrolling-aeunet_32_2_64_2-randinit-5iter-subgrad+state-ossev2-noiseg+u03
 #xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2bis-obs+state-ossev2-noiseg+u03
 
 ckpt: null
@@ -17,8 +19,8 @@ ckpt: null
 trainer:
   check_val_every_n_epoch: 3
   max_epochs: 2000
-  limit_train_batches: 100 #250
-  accumulate_grad_batches: 1 #8
+  limit_train_batches: 100 #50 #250
+  accumulate_grad_batches: 1 #1 #8
 
   callbacks:
     - _target_: pytorch_lightning.callbacks.LearningRateMonitor
@@ -56,20 +58,20 @@ datamodule:
       domain_limits: ${domain.train}
       noise: .03
       noise_type: gaussian+uniform #uniform-constant #null # #uniform-constant spatial-perturb
+  #dl_kw: {batch_size: 16, num_workers: 4}
   dl_kw: {batch_size: 8, num_workers: 4}
-  #dl_kw: {batch_size: 4, num_workers: 4}
 
 model:
-  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN #Lit4dVarNetIgnoreNaN_MergeTimeSteps # #_FM_E2E
+  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN_FM #Lit4dVarNetIgnoreNaN_MergeTimeSteps # #_FM_E2E
   w_mse: 50.
   w_grad_mse: 1000.
   w_prior: 1. #1.
   w_mse_lr: 0.
   w_grad_mse_lr: 0
   osse_with_interp_error: false #true
-  #use_fm_learning: true
+  use_fm_learning: 0.5 #01
   solver:
-    _target_: contrib.4dvarnet_latent.models.GradSolver_withStep #GradSolver_FM #GradSolver_withStep # # # # # ##GradSolver_FM # #ocean4dvarnet.models.GradSolver
+    _target_: contrib.4dvarnet_latent.models.GradSolver_FM #GradSolver_withStep # #GradSolver_withStep # # # # # ##GradSolver_FM # #ocean4dvarnet.models.GradSolver
     n_step: 5 #2 #5 #10
     lr_grad: 0. #1e3
     std_init: 0.1
@@ -82,7 +84,7 @@ model:
         dims: 2
         in_channels: 15 #15 #${datamodule.xrds_kw.train.patch_dims.time}
         out_channels: 15 #${datamodule.xrds_kw.train.patch_dims.time}
-        model_channels: 32 #64 #32
+        model_channels: 32 #64
         num_res_blocks: 2
         channel_mult: [1,2,4]
         attention_resolutions: []
@@ -107,7 +109,7 @@ model:
         dims: 2
         in_channels: 45 #45 #${datamodule.xrds_kw.train.patch_dims.time}
         out_channels: 15 #15 #${datamodule.xrds_kw.train.patch_dims.time}
-        model_channels: 64 #96 #64 #32
+        model_channels: 64 #96 #32
         num_res_blocks: 2 #3 #2
         channel_mult: [1,2,4]
         attention_resolutions: []

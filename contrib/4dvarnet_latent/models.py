@@ -614,12 +614,20 @@ class GradSolver_withStep(GradSolver):
             self.init_h_state(batch, h_state=h_state)
             self.grad_mod.reset_state(batch.input)
 
+            if ( not self.training ) :
+                if ( 'subgrad' in self.input_grad_update ) or ( 'grad' not in self.input_grad_update ):
+                    state.requires_grad_(False)
+                    self.h_state.requires_grad_(False)
+
             for step in range(self.n_step):
 
                 alpha_step = 1. / self.n_step               
                 state = self.solver_step(state, batch, step= step / self.n_step, alpha_step=alpha_step)
                 if ( not self.training ) and ( 'grad' in self.input_grad_update ):
-                    state = state.detach().requires_grad_(True)
+                    if( 'subgrad' in self.input_grad_update ):
+                        state = state.detach().requires_grad_(False)
+                    else:
+                        state = state.detach().requires_grad_(True)
 
         return state
 
@@ -651,6 +659,7 @@ class GradSolver_FM(GradSolver_withStep):
         Returns:
             torch.Tensor: Initialized state.
         """
+
         if x_init is not None:
             if ( not self.training ) and ( 'grad' in self.input_grad_update ):
                 return x_init.detach().requires_grad_(True), 0. #torch.zeros(batch.input.shape[0],device=batch.input.device)
@@ -663,8 +672,11 @@ class GradSolver_FM(GradSolver_withStep):
 
             # random step
             t = torch.rand(batch.input.shape[0],device=batch.input.device)
-
-            #print('t in init_state:', t, flush=True)
+            if ( use_fm_learning < 1. ):
+                n_ = int(use_fm_learning * batch.input.shape[0])
+                t  = torch.cat( ( t[:n_] , torch.zeros(batch.input.shape[0]-n_,device=batch.input.device) ), dim=0 )
+                #print('n_:', n_, flush=True)
+                #print('t:', t, flush=True)
             t_ = t.view(-1,1,1,1).repeat(1,batch.input.shape[1],batch.input.shape[2],batch.input.shape[3])
             xt = (1.-t_) * noise + t_ * batch.tgt.nan_to_num()
                         
@@ -1286,7 +1298,7 @@ class Lit4dVarNetIgnoreNaN(Lit4dVarNet):
             training_loss = self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1]
             training_loss += self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1]
         else:
-            training_loss = ( self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1] ) / ( self.w_mse * loss_mse[0] + self.w_grad_mse )
+            training_loss = ( self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1] ) / ( self.w_mse + self.w_grad_mse )
             training_loss *= 100.**2 * self.norm_stats[phase][1] ** 2
 
         with torch.no_grad():
@@ -1442,22 +1454,26 @@ class Lit4dVarNetIgnoreNaN_FM_E2E(Lit4dVarNetIgnoreNaN_FM):
         if phase == 'val' and self.use_fm_learning:
             use_fm_learning = self.use_fm_learning
             self.use_fm_learning = False
-            std_init = self.solver.std_init 
-            self.solver.std_init =  self.solver.std_init * torch.rand(1).to(device=batch.input.device)
+            #std_init = self.solver.std_init 
+            #self.solver.std_init =  self.solver.std_init * torch.rand(1).to(device=batch.input.device)
 
         loss, out = self.base_step(batch_, phase)
 
         loss_mse = self.loss_mse(batch,out,phase)
         loss_prior = self.loss_prior(batch,out.detach(),phase)
 
-        training_loss = self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1]
-        training_loss += self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1]
+        if phase == 'train':
+            training_loss = self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1]
+            training_loss += self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1]
+        else:
+            training_loss = ( self.w_mse * loss_mse[0] + self.w_grad_mse * loss_mse[1] ) / ( self.w_mse + self.w_grad_mse )
+            training_loss *= 100.**2 * self.norm_stats[phase][1] ** 2
 
         if phase == 'train' and self.use_fm_learning:
             # apply base-step with use_fm_learning == false
             self.use_fm_learning = False
-            std_init = self.solver.std_init
-            self.solver.std_init =  self.solver.std_init * torch.rand(1).to(device=batch.input.device)
+            #std_init = self.solver.std_init
+            #self.solver.std_init =  self.solver.std_init * torch.rand(1).to(device=batch.input.device)
 
             loss, out = self.base_step(batch_, phase)
 
@@ -1468,12 +1484,11 @@ class Lit4dVarNetIgnoreNaN_FM_E2E(Lit4dVarNetIgnoreNaN_FM):
             training_loss += 0.5 * ( self.w_prior * loss_prior[0] + self.w_prior * loss_prior[1] )
          
             self.use_fm_learning = True
-            self.solver.std_init = std_init
+            #self.solver.std_init = std_init
 
         elif phase == 'val' and use_fm_learning:
             self.use_fm_learning = True
-            self.solver.std_init = std_init  
-
+            #self.solver.std_init = std_init  
         with torch.no_grad():
             self.log(
                 f"{phase}_mse",
