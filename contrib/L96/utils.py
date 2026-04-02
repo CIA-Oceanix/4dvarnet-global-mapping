@@ -56,15 +56,15 @@ def get_triang_time_wei(patch_dims, offset=0, crop=None, dim_order=("time", "lat
         w = tri * pw
         w = np.squeeze(w, axis=-1)   # drop lon -> [time, lat]
 
-    elif pw.ndim == 2:
-        # [time, lat]
-        tri = np.fromfunction(
-            lambda t, y: (1 - np.abs(offset + 2 * t - T) / T),
-            pw.shape,
-            dtype=float
-        ).astype(np.float32)
+    # elif pw.ndim == 2:
+    #     # [time, lat]
+    #     tri = np.fromfunction(
+    #         lambda t, y: (1 - np.abs(offset + 2 * t - T) / T),
+    #         pw.shape,
+    #         dtype=float
+    #     ).astype(np.float32)
 
-        w = tri * pw
+    #     w = tri * pw
 
     else:
         raise ValueError(f"Unexpected pw.ndim={pw.ndim}, pw.shape={pw.shape}")
@@ -128,6 +128,16 @@ def rmse_based_scores(ds):
     da_rec = ds["out"]
     da_ref = ds["tgt"]
     da_input = ds["inp"]
+
+    # Nombre de timestamps
+    n_time = da_rec.sizes["time"]
+    k = int(0.05 * n_time)
+
+    # Trim des 5% début et fin
+    if k > 0:
+        da_rec = da_rec.isel(time=slice(k, -k))
+        da_ref = da_ref.isel(time=slice(k, -k))
+        da_input = da_input.isel(time=slice(k, -k))
 
     # RMSE globale
     rmse = np.sqrt(((da_rec - da_ref) ** 2).mean())

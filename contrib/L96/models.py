@@ -27,6 +27,7 @@ class Lit4dVarNet(pl.LightningModule):
 
     @staticmethod
     def weighted_mse(err, weight):
+        print(f"err shape: {err.shape}, weight shape: {weight.shape}")
         err_w = err * weight[None, ...]
         non_zeros = (torch.ones_like(err) * weight[None, ...]) == 0.0
         err_num = err.isfinite() & ~non_zeros
