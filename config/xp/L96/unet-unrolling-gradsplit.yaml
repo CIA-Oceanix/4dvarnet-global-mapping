@@ -32,7 +32,7 @@ trainer:
     save_dir: ${hydra:runtime.output_dir}
     name: ${xp_name}
     version: ''
-  max_epochs: 3
+  max_epochs: 500
   callbacks:
     - _target_: pytorch_lightning.callbacks.LearningRateMonitor
     # 🔹 Sauvegarde du meilleur modèle 
@@ -85,18 +85,43 @@ model:
       crop: {time: 0, lat: 0, lon: 0}
       offset: 0
   solver:
-      _target_: contrib.4dvarnet_latent.unet.UNetModel2
-      dims: 2
-      in_channels: 1
-      out_channels: 1
-      model_channels: 32 #96 #64 #32
-      num_res_blocks: 1 #3 #2
-      channel_mult: [1,2,3]
-      attention_resolutions: []
-      use_checkpoint: true
-      dropout: 0.1
-      bias: false #
-      interp_mode: 'bilinear' #'nearest' # 
+    _target_: contrib.4dvarnet_latent.models.GradSolver_withStep 
+    n_step: 5 #2 #5 #10
+    lr_grad: 0. #1e3
+    std_init: 0.1
+    input_grad_update: 'gradsplit' #'obs+state' ##'grad-only' #'grad+state' #'obs-only'  # 'grad+previous'  #'gobs+sgprior' #'grad+state'  #'grad-only' #'grad+state'  #'grad+state' #    
+    prior_cost:
+      _target_: contrib.4dvarnet_latent.models.GenericAEPriorCost
+      model_ae:
+        _target_: contrib.4dvarnet_latent.unet.UNetModel
+        dims: 2
+        in_channels: 1 #15 #${datamodule.xrds_kw.train.patch_dims.time}
+        out_channels: 1 #${datamodule.xrds_kw.train.patch_dims.time}
+        model_channels: 32 #64 #32
+        num_res_blocks: 1
+        channel_mult: [1,2,3]
+        attention_resolutions: []
+        use_checkpoint: true
+        dropout: 0.1
+        bias: false #true #
+    obs_cost:
+      _target_: ocean4dvarnet.models.BaseObsCost
+    grad_mod:
+      _target_: contrib.4dvarnet_latent.models.GradModelWithCondition
+      #use_grad_norm: true
+      grad_model: 
+        _target_: contrib.4dvarnet_latent.unet.UNetModel2
+        dims: 2
+        in_channels: 2 #45 #${datamodule.xrds_kw.train.patch_dims.time}
+        out_channels: 1 #15 #${datamodule.xrds_kw.train.patch_dims.time}
+        model_channels: 32 #96 #64 #32
+        num_res_blocks: 1 #3 #2
+        channel_mult: [1,2,3]
+        attention_resolutions: []
+        use_checkpoint: true
+        dropout: 0.1
+        bias: false #true #
+        interp_mode: 'bilinear' #'nearest' # 
 
        
   test_metrics: ${metrics.test_metrics}
