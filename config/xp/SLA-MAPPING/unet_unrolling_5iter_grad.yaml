@@ -148,5 +148,5 @@ entrypoints:
     config_path: ${config_path}
     ckpt_path: ${ckpt}
 defaults:
-  - glo12-sla-4th-unet
+  - SLA-MAPPING/glo12-sla-4th-unet
   - _self_

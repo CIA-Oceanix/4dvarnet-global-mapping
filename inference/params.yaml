@@ -396,9 +396,9 @@ method:
   #checkpoint: ../outputs/2025-12-04/glo12-sla-4th-unet15M-unrolling-aeunet-randinit-5iter-subgrad+state-ossev2-noiseg+u03-23-56-02/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
   #config: ../outputs/2025-12-04/glo12-sla-4th-unet15M-unrolling-aeunet-randinit-5iter-subgrad+state-ossev2-noiseg+u03-23-56-02/.hydra/config.yaml  
 
-  name: glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03-5
-  checkpoint: ../outputs/2025-12-13/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03-10-44-40/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
-  config: ../outputs/2025-12-13/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03-10-44-40/.hydra/config.yaml 
+  name: unet_unrolling_5iter_grad_downsampling_inference
+  checkpoint: /Odyssey/private/p23leflo/projects/4dvarnet-global-mapping/outputs/2026-05-07/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-grad-ds4-ossev2-noiseg+u03-10-34-22/SLA-MAPPING/unet_unrolling_5iter_grad_downsampling/checkpoints/last.ckpt
+  config: /Odyssey/private/p23leflo/projects/4dvarnet-global-mapping/outputs/2026-05-07/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-grad-ds4-ossev2-noiseg+u03-10-34-22/.hydra/config.yaml
 
   #name: glo12-sla-4th-unet15M-unrolling-aeunet_32_2_64_2-randinit-5iter-subgrad+state-ossev2-noiseg+u03-0
   #checkpoint: ../outputs/2025-12-14/glo12-sla-4th-unet15M-unrolling-aeunet_32_2_64_2-randinit-5iter-subgrad+state-ossev2-noiseg+u03-21-55-36/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt

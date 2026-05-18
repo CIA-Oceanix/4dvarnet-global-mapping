@@ -2,9 +2,9 @@ schema: '2.0'
 stages:
   inference:
     cmd: "python inferring.py +input=/Odyssey/public/data_challenge_ssh_ose/data/gridded_alongtrack/sla_filtered_0.25deg.nc
-      +checkpoint_path=../outputs/2025-12-13/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03-10-44-40/glo12-sla-4th-unrolling-ossev1/checkpoints/best.ckpt
-      +config_path=../outputs/2025-12-13/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03-10-44-40/.hydra/config.yaml
-      +output_path=./output//glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-subgrad+state-ossev2-noiseg+u03-5-to4th.nc
+      +checkpoint_path=/Odyssey/private/p23leflo/projects/4dvarnet-global-mapping/outputs/2026-05-07/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-grad-ds4-ossev2-noiseg+u03-10-34-22/SLA-MAPPING/unet_unrolling_5iter_grad_downsampling/checkpoints/last.ckpt
+      +config_path=/Odyssey/private/p23leflo/projects/4dvarnet-global-mapping/outputs/2026-05-07/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-grad-ds4-ossev2-noiseg+u03-10-34-22/.hydra/config.yaml
+      +output_path=./output//unet_unrolling_5iter_grad_downsampling_inference-to4th.nc
       +patch=15-648-512 +stride=1-200-244 +period_from=2018-12-01 +period_to=2020-01-31
       +input_var=sla_filtered +output_var=sla +output_geo_uv=false +normalization_type=none
       +obs_filtering=false +output_dc_format=true +ensemble_mean_from_noise=true +nb_steps_solver=5
