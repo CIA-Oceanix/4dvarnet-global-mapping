@@ -1,4 +1,7 @@
 import logging
+import os
+import pathlib
+import tempfile
 
 import matplotlib.pylab as plt
 import numpy as np
@@ -7,6 +10,45 @@ import xarray as xr
 from netCDF4 import Dataset
 from scipy import stats
 from src.mod_filter import *
+
+_SAD_DIR = pathlib.Path('/Odyssey/public/data_challenge_ssh_ose/data/sad')
+
+
+def _save_groups(output_file, datasets, group_names):
+    """Write xarray Datasets as named groups in a single NetCDF4 file.
+
+    Writes each dataset to a separate temp file (mode='w', no group) then
+    copies them into the final file via netCDF4, avoiding xarray's automatic
+    mode='w'→'a' switch that fails on network filesystems (GPFS/Lustre).
+    """
+    import netCDF4 as nc4
+
+    def _copy_nc4_group(src, dst):
+        for dim, d in src.dimensions.items():
+            dst.createDimension(dim, None if d.isunlimited() else len(d))
+        for name, var in src.variables.items():
+            nv = dst.createVariable(name, var.datatype, var.dimensions)
+            nv.setncatts({k: var.getncattr(k) for k in var.ncattrs()})
+            nv[:] = var[:]
+        dst.setncatts({k: src.getncattr(k) for k in src.ncattrs()})
+
+    tmp_files = []
+    try:
+        for ds in datasets:
+            fd, tmp = tempfile.mkstemp(suffix='.nc')
+            os.close(fd)
+            tmp_files.append(tmp)
+            ds.to_netcdf(tmp, mode='w', format='NETCDF4')
+
+        pathlib.Path(output_file).unlink(missing_ok=True)
+        with nc4.Dataset(output_file, 'w', format='NETCDF4') as root:
+            for tmp, group_name in zip(tmp_files, group_names):
+                with nc4.Dataset(tmp, 'r') as src:
+                    _copy_nc4_group(src, root.createGroup(group_name))
+    finally:
+        for tmp in tmp_files:
+            pathlib.Path(tmp).unlink(missing_ok=True)
+
 
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                     level=logging.INFO,
@@ -162,8 +204,7 @@ def bin_data(ds, output_file, lon_out=np.arange(0, 360, 1), lat_out=np.arange(-9
     ds1 = ds1.assign_attrs({'method':method_name})
     ds2 = ds2.assign_attrs({'method':method_name})
 
-    ds1.to_netcdf(output_file, group="all_scale", format="NETCDF4")
-    ds2.to_netcdf(output_file, "a", group="filtered", format="NETCDF4")
+    _save_groups(output_file, [ds1, ds2], ['all_scale', 'filtered'])
     
 
 def compute_stat_scores(ds_interp, lambda_min, lambda_max, output_file, method_name=' '):
@@ -318,9 +359,9 @@ def compute_stat_scores_by_regimes(ds_interp, output_file):
     >>> compute_stat_scores_by_regimes(interpolated_data, output_file)
     """
     
-    distance_to_nearest_coast = '../data/sad/distance_to_nearest_coastline_60.nc'
-    land_sea_mask = '../data/sad/land_water_mask_60.nc'
-    variance_ssh = '../data/sad/variance_cmems_dt_allsat.nc'
+    distance_to_nearest_coast = str(_SAD_DIR / 'distance_to_nearest_coastline_60.nc')
+    land_sea_mask = str(_SAD_DIR / 'land_water_mask_60.nc')
+    variance_ssh = str(_SAD_DIR / 'variance_cmems_dt_allsat.nc')
     variance_criteria = 0.02             # min variance contour in m**2 to define the high variability regions
     coastal_distance_criteria = 200.     # max distance to coast in km to define the coastal regions
     
@@ -693,7 +734,7 @@ def bin_data_uv(ds, output_file, lon_out=np.arange(0, 360, 1), lat_out=np.arange
      
     
     ds1 = ds1.assign_attrs({'method':method_name})
-    ds1.to_netcdf(output_file, group="all_scale", format="NETCDF4")
+    _save_groups(output_file, [ds1], ['all_scale'])
 
     
 def compute_stat_scores_uv_by_regimes(ds_interp, output_file): 
@@ -712,9 +753,9 @@ def compute_stat_scores_uv_by_regimes(ds_interp, output_file):
     None
     """
     
-    distance_to_nearest_coast = '../data/sad/distance_to_nearest_coastline_60.nc'
-    land_sea_mask = '../data/sad/land_water_mask_60.nc'
-    variance_ssh = '../data/sad/variance_cmems_dt_allsat.nc'
+    distance_to_nearest_coast = str(_SAD_DIR / 'distance_to_nearest_coastline_60.nc')
+    land_sea_mask = str(_SAD_DIR / 'land_water_mask_60.nc')
+    variance_ssh = str(_SAD_DIR / 'variance_cmems_dt_allsat.nc')
     variance_criteria = 0.02             # min variance contour in m**2 to define the high variability regions
     coastal_distance_criteria = 200.     # max distance to coast in km to define the coastal regions
     

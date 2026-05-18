@@ -1,3 +1,5 @@
+import pathlib
+
 import cartopy.crs as ccrs
 import hvplot.xarray
 import pandas as pd
@@ -8,8 +10,11 @@ import matplotlib.axes
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
-import cartopy.feature as cfeature 
+import cartopy.feature as cfeature
 from src.mod_compare import *
+
+_FIGURES_DIR = pathlib.Path(__file__).resolve().parent.parent.parent / 'figures'
+_FIGURES_DIR.mkdir(parents=True, exist_ok=True)
  
 
 def plot_stat_score_map(filename):
@@ -325,7 +330,7 @@ def plot_effective_resolution_png(filename,region='glob',box_lonlat=None, change
     fig.subplots_adjust(bottom=0.2, top=0.9, left=0.1, right=0.9,
                     wspace=0.02, hspace=0.01)
     
-    plt.savefig("../figures/Maps_"+str(method_name)+"_effres_"+region+".png", bbox_inches='tight')
+    plt.savefig(str(_FIGURES_DIR / "Maps_")+str(method_name)+"_effres_"+region+".png", bbox_inches='tight')
     
     print('Averaged effective resolution:',np.nanmean(ds.effective_resolution),'km')
 
@@ -399,7 +404,7 @@ def plot_psd_scores(filename):
     fig.subplots_adjust(bottom=0.2, top=0.9, left=0.1, right=0.9,
                     wspace=0.02, hspace=0.01)
     
-    plt.savefig("../figures/Maps_"+str(method_name)+"_effres_"+region+".png", bbox_inches='tight')
+    plt.savefig(str(_FIGURES_DIR / "Maps_")+str(method_name)+"_effres_"+region+".png", bbox_inches='tight')
 
 
 def plot_psd_scores(filename):
@@ -768,7 +773,7 @@ def plot_stat_score_map_uv_png(filename,region='glob',box_lonlat=None):
     cbar = fig.colorbar(p1, cax=cax, orientation='vertical')
     cax.set_ylabel('Error variance [m$^2$.s$^{-2}$]', fontweight='bold')
     
-    plt.savefig("../figures/Maps_"+str(method_name)+"_errvar_"+region+"_uv.png", bbox_inches='tight')
+    plt.savefig(str(_FIGURES_DIR / "Maps_")+str(method_name)+"_errvar_"+region+"_uv.png", bbox_inches='tight')
     
     fig.subplots_adjust(bottom=0.2, top=0.9, left=0.1, right=0.9,
                     wspace=0.02, hspace=0.01) 
@@ -825,7 +830,7 @@ def plot_stat_score_map_uv_png(filename,region='glob',box_lonlat=None):
     fig.subplots_adjust(bottom=0.2, top=0.9, left=0.1, right=0.9,
                     wspace=0.02, hspace=0.01) 
     
-    plt.savefig("../figures/Maps_"+str(method_name)+"_explvar_"+region+"_uv.png", bbox_inches='tight')
+    plt.savefig(str(_FIGURES_DIR / "Maps_")+str(method_name)+"_explvar_"+region+"_uv.png", bbox_inches='tight')
     
     
 def plot_psd_scores_currents_png(filename,region='glob'):    
@@ -984,7 +989,7 @@ def plot_psd_scores_currents_png(filename,region='glob'):
     fig.delaxes(axs[-1])
     
     
-    plt.savefig("../figures/Maps_"+str(method_name)+"_effres_"+region+"_uv.png", bbox_inches='tight')
+    plt.savefig(str(_FIGURES_DIR / "Maps_")+str(method_name)+"_effres_"+region+"_uv.png", bbox_inches='tight')
     
        
     
@@ -1100,7 +1105,7 @@ def plot_stat_score_map_png(filename,region='glob',box_lonlat=None, change_lon=T
     cbar = fig.colorbar(p1, cax=cax, orientation='vertical')
     cax.set_ylabel('Error variance [m$^2$]', fontweight='bold')
     
-    plt.savefig("../figures/Maps_"+str(method_name)+"_errvar_"+region+".png", bbox_inches='tight')
+    plt.savefig(str(_FIGURES_DIR / "Maps_")+str(method_name)+"_errvar_"+region+".png", bbox_inches='tight')
     
     
     fig, axs = plt.subplots(nrows=1,ncols=2,
@@ -1153,7 +1158,7 @@ def plot_stat_score_map_png(filename,region='glob',box_lonlat=None, change_lon=T
     fig.subplots_adjust(bottom=0.2, top=0.9, left=0.1, right=0.9,
                     wspace=0.02, hspace=0.01)
         
-    plt.savefig("../figures/Maps_"+str(method_name)+"_explvar_"+region+".png", bbox_inches='tight')
+    plt.savefig(str(_FIGURES_DIR / "Maps_")+str(method_name)+"_explvar_"+region+".png", bbox_inches='tight')
     
     
     
