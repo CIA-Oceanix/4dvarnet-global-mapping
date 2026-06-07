@@ -1,30 +1,26 @@
 #!/bin/bash
 
-#SBATCH --partition=Odyssey                       
-#SBATCH --gres=gpu:a100:1                       # a100:1                       
+#SBATCH --partition=Odyssey_GPU                      
+#SBATCH --gres=gpu:h100:1                       # a100:1                       
 #SBATCH --job-name=inference                   
 #SBATCH --output=logs/Test-GPU_%j.log           
 #SBATCH --mem=100G
 #SBATCH --error=logs/err_%A_%a.txt
-#SBATCH --cpus-per-gpu=16
+#SBATCH --cpus-per-task=4
 
 # Activer l’environnement
-export CONDARC=/Odyssey/private/rfablet/miniforge3/.condarc
-export HOME=/Odyssey/private/rfablet
+export CONDARC=/Odyssey/private/p23leflo/miniforge3/.condarc
+export HOME=/Odyssey/private/p23leflo
 # unset SLURM_MEM_PER_CPU
 
-#source $HOME/.bashrc
-source "/Odyssey/private/rfablet/miniforge3/etc/profile.d/conda.sh"
-conda activate fdv
-
-export scrdir=/SCRATCH/rfablet/Dataset/
-if [ ! -d $scrdir ]; then
-    mkdir -p $scrdir;
-fi;
+source $HOME/.bashrc
+conda activate 4dvarnet
 
 
-cd /Odyssey/private/rfablet/Python/4dvarnet-global-mapping/inference
+
+
+cd /Odyssey/private/p23leflo/projects/4dvarnet-global-mapping/inference
 #srun python main.py xp=glo12-sla-4th-unet domain=glorys
 #srun python main.py xp=glo12-sla-4th-unet-oseWosse domain=glorys
 #srun python main.py xp=glo12-sla-4th-unet+-oseWosse domain=glorys
-srun dvc repro
+HYDRA_FULL_ERROR=1 srun dvc repro

@@ -26,5 +26,7 @@ stages:
       +std_noise_input=${method.std_noise_input}
       +std_init_state=${method.std_init_state}
       +batch_size=1
+      +mean=${method.mean}
+      +std=${method.std}
       hydra.run.dir=. hydra.output_subdir=null hydra/job_logging=disabled
       hydra/hydra_logging=disabled

@@ -128,3 +128,5 @@ class Lit4dVarNetIgnoreNaNDownsampling(Lit4dVarNetIgnoreNaN):
     def on_test_epoch_end(self):
         # out is at 0.25-deg so rec_weight needs no adjustment.
         super().on_test_epoch_end()
+
+
