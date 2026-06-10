@@ -74,6 +74,18 @@ class Lit4dVarNetIgnoreNaNDownsampling(Lit4dVarNetIgnoreNaN):
             pw = (-W) % self.unet_stride
             if ph > 0 or pw > 0:
                 inp = F.pad(inp, (0, pw, 0, ph), mode="reflect")
+                # CRITICAL: pad the 0.25-deg obs grid with NaN by the same
+                # amount (x downsamp) so that BaseObsCostWithUpsampling keeps
+                # the padded state geographically aligned with the obs.
+                # Without this the padded state (H+ph rows) is stretched onto
+                # the unpadded obs grid (H*downsamp rows), shifting structures
+                # by up to ph degrees of latitude. NaNs are masked out in the
+                # obs cost so the padded band carries no data term.
+                orig_input = F.pad(
+                    orig_input,
+                    (0, pw * self.downsamp, 0, ph * self.downsamp),
+                    value=float("nan"),
+                )
 
             batch = TrainingItemWithOrig(input=inp, tgt=getattr(batch, 'tgt', None), orig_input=orig_input)
             out = self.solver(batch)

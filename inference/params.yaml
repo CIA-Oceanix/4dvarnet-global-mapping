@@ -3,18 +3,18 @@ method:
   # SLA
   # -------------------------------------------------------------------
   geo_uv: false
-  mean: -0.001930378327255099
-  std: 0.08604745118775728
+  #mean: -0.001930378327255099
+  #std: 0.08604745118775728
   normalization_type: none #norm_stats_from_patch
   obs_filtering: false #true
   interp_on_mdt_grid: false #true
   ensemble_mean_from_noise: true #false #true 
   std_noise_input: 0.2 #0.20
-  nb_steps_solver: 5 #10false
-  nb_steps_fm_ode: -1 #0 for no ODE inference, >1 for ODE inference
-  std_init_state: 0.1 #0.0 #1.0
+  #nb_steps_solver: 5 #10false
+  #nb_steps_fm_ode: -1 #0 for no ODE inference, >1 for ODE inference
+  #std_init_state: 0.1 #0.0 #1.0
 
 
-  name: unet_unrolling_5iter_grad_downsampling
-  checkpoint: /Odyssey/private/p23leflo/projects/4dvarnet-global-mapping/outputs/2026-06-02/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-grad-ds4-ossev2-noiseg+u03-11-57-13/SLA-MAPPING/unet_unrolling_5iter_grad_downsampling/checkpoints/last.ckpt
-  config: /Odyssey/private/p23leflo/projects/4dvarnet-global-mapping/outputs/2026-06-02/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-grad-ds4-ossev2-noiseg+u03-11-57-13/.hydra/config.yaml
+  name: unet_unrolling_5iter_grad_downsampling_insolver
+  checkpoint: /Odyssey/private/p23leflo/projects/4dvarnet-global-mapping/outputs/2026-06-07/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-grad-ds4-ossev2-noiseg+u03-insolver-11-34-26/SLA-MAPPING/unet_unrolling_5iter_grad_downsampling_insolver/checkpoints/last.ckpt
+  config: /Odyssey/private/p23leflo/projects/4dvarnet-global-mapping/outputs/2026-06-07/glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-grad-ds4-ossev2-noiseg+u03-insolver-11-34-26/.hydra/config.yaml

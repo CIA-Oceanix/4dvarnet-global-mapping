@@ -6,7 +6,7 @@
 #SBATCH --output=logs/Test-GPU_%j.log           
 #SBATCH --mem=100G
 #SBATCH --error=logs/err_%A_%a.txt
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=12
 
 # Activer l’environnement
 export CONDARC=/Odyssey/private/p23leflo/miniforge3/.condarc
@@ -23,4 +23,4 @@ cd /Odyssey/private/p23leflo/projects/4dvarnet-global-mapping/inference
 #srun python main.py xp=glo12-sla-4th-unet domain=glorys
 #srun python main.py xp=glo12-sla-4th-unet-oseWosse domain=glorys
 #srun python main.py xp=glo12-sla-4th-unet+-oseWosse domain=glorys
-HYDRA_FULL_ERROR=1 srun dvc repro
+HYDRA_FULL_ERROR=1 srun dvc repro -f

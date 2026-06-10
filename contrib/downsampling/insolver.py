@@ -31,9 +31,12 @@ class GradSolver_withStep_Downsampling(GradSolver_withStep):
     The LightningModule (Lit4dVarNetIgnoreNaN) requires no modification.
     """
 
-    def __init__(self, *args, downsamp=None, **kwargs):
+    def __init__(self, *args, downsamp=None, unet_stride=4, **kwargs):
         super().__init__(*args, **kwargs)
         self.downsamp = downsamp
+        # UNet downsampling factor (2 ** nb_pool_levels); the 1-deg state must be
+        # divisible by it, otherwise the encoder/decoder skip connections mismatch.
+        self.unet_stride = unet_stride
 
     def init_state(self, batch, x_init=None):
         x0 = self.std_init * torch.randn_like(batch.input)
@@ -41,8 +44,34 @@ class GradSolver_withStep_Downsampling(GradSolver_withStep):
         return x0.detach().requires_grad_(True)
 
     def forward(self, batch, x_init=None, h_state=None, phase='test'):
+        out_size = batch.input.shape[-2:]
         with torch.set_grad_enabled(True):
             state = self.init_state(batch, x_init=x_init)
+
+            # Reflect-pad the 1-deg state so both UNets (prior_cost and grad_mod)
+            # receive spatial dims divisible by unet_stride. Without this, patches
+            # whose downsampled size is not a multiple of unet_stride (e.g. the
+            # 648-lat inference patch -> 162 -> odd 81 after one pooling) break the
+            # skip-connection concat inside the UNet.
+            h, w = state.shape[-2:]
+            ph = (-h) % self.unet_stride
+            pw = (-w) % self.unet_stride
+            if ph > 0 or pw > 0:
+                state = F.pad(state, (0, pw, 0, ph), mode="reflect")
+                state = state.detach().requires_grad_(True)
+                # CRITICAL: pad the obs grid with NaN by the same amount
+                # (x downsamp) so the bilinear upsampling inside the obs cost
+                # keeps the state geographically aligned with the observations.
+                # Without this the padded state (h+ph rows) is stretched onto
+                # the unpadded obs grid (h*downsamp rows), shifting structures
+                # by up to ph degrees of latitude. NaNs are masked out in the
+                # obs cost so the padded band carries no data term.
+                batch = batch._replace(input=F.pad(
+                    batch.input,
+                    (0, pw * self.downsamp, 0, ph * self.downsamp),
+                    value=float("nan"),
+                ))
+
             self.init_h_state(batch, h_state=h_state)
             self.grad_mod.reset_state(batch.input)
             for step in range(self.n_step):
@@ -51,4 +80,10 @@ class GradSolver_withStep_Downsampling(GradSolver_withStep):
                 if (not self.training) and ('grad' in self.input_grad_update):
                     state = state.detach().requires_grad_(True)
 
-        return F.interpolate(state, scale_factor=float(self.downsamp), mode="bilinear", align_corners=False)
+            # Drop the padding before upsampling so the output matches the input grid.
+            if ph > 0 or pw > 0:
+                state = state[..., :h, :w]
+
+        # size= (not scale_factor) guarantees the output lands exactly on the
+        # original 0.25-deg grid regardless of avg_pool2d rounding.
+        return F.interpolate(state, size=out_size, mode="bilinear", align_corners=False)
