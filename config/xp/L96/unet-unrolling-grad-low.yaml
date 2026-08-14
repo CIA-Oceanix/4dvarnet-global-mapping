@@ -9,10 +9,10 @@ ckpt: null
 paths:
     l96_dir: /Odyssey/public/l96_dataset/
     l96_trajectories: 
-      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_1.nc
-      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_2.nc
-      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_3.nc
-      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_4.nc
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_1_10_of_40.nc
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_2_10_of_40.nc
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_3_10_of_40.nc
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_4_10_of_40.nc
     src: /Odyssey/private/p25denai/4dvarnet-ronan_dev
 
 hydra:

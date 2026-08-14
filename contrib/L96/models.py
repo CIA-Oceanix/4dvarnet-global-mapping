@@ -5,6 +5,11 @@ import kornia.filters as kfilts
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from omegaconf import OmegaConf
+import hydra
+
+import numpy as np
+import xarray as xr
 
 class Lit4dVarNet(pl.LightningModule):
     def __init__(self, solver, rec_weight, opt_fn, test_metrics=None, pre_metric_fn=None, norm_stats=None, persist_rw=True):
@@ -293,8 +298,8 @@ class LitUnet_like_4dVarNet(Lit4dVarNet):
         super().__init__(solver, rec_weight, opt_fn, test_metrics, pre_metric_fn, norm_stats, persist_rw)
         
 
-    def forward(self, batch):
-        return self.solver(batch)
+    def forward(self, batch, phase=""):
+        return self.solver(batch, phase=phase)
 
     def step(self, batch, phase=""):
         if self.training and batch.tgt.isfinite().float().mean() < 0.9:
@@ -308,7 +313,7 @@ class LitUnet_like_4dVarNet(Lit4dVarNet):
         return training_loss, out
 
     def base_step(self, batch, phase=""):
-        out = self(batch=batch)
+        out = self(batch=batch, phase=phase)
         loss = self.weighted_mse(out - batch.tgt, self.rec_weight)
 
         with torch.no_grad():
@@ -316,5 +321,250 @@ class LitUnet_like_4dVarNet(Lit4dVarNet):
             self.log(f"{phase}_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
 
         return loss, out    
+
+
+
+
+
+
+##############################################################
+class LitUnet_like_4dVarNet_FM(LitUnet_like_4dVarNet):
+
+    def __init__(self, solver, rec_weight, opt_fn, test_metrics=None, pre_metric_fn=None, norm_stats=None, persist_rw=True,use_fm_learning=False):
+        # Call the parent class's initializer
+        super().__init__(solver, rec_weight, opt_fn, test_metrics, pre_metric_fn, norm_stats, persist_rw)
+        self.use_fm_learning = use_fm_learning
+
+
+
+    def base_step(self, batch, phase):
+        out = self(batch=batch, phase=phase)
+        loss = self.weighted_mse(out - batch.tgt, self.rec_weight)
+
+        return loss, out
+
+    def forward(self, batch, phase='test'):
+        """
+        Forward pass through the solver.
+
+        Args:
+            batch (dict): Input batch.
+
+        Returns:
+            torch.Tensor: Solver output.
+        """
+        print("Target value range:", batch.tgt.min().item(), batch.tgt.max().item())
+        print("Target value mean:", batch.tgt.mean().item())
+        out = self.solver(batch, phase=phase, use_fm_learning=self.use_fm_learning)
+        print("Output value range:", out.min().item(), out.max().item())
+        print("Output value mean:", out.mean().item())
+        return out
+
+
+
+    def test_step(self, batch, batch_idx):
+        if batch_idx == 0:
+            self.test_data = []
+
+        m, s = self.norm_stats
+        n_repeat = 200  # ou valeur fixe
+
+        batch_outputs = []
+
+        for r in range(n_repeat):
+            out = self(batch=batch)
+
+            batch_input = (batch.input.cpu() * s + m).permute(0, 2, 3, 1)
+            batch_tgt = (batch.tgt.cpu() * s + m).permute(0, 2, 3, 1)
+            out_data = (out.squeeze(dim=-1).detach().cpu() * s + m).permute(0, 2, 3, 1)
+
+            batch_outputs.append(torch.stack(
+                [batch_input, batch_tgt, out_data],
+                dim=1  # (B, 3, H, W, C)
+            ))
+
+        # 👉 stack sur la dimension répétition
+        batch_outputs = torch.stack(batch_outputs, dim=1)
+        # shape: (B, R, 3, H, W, C)
+
+        self.test_data.append(batch_outputs)
+
+    
+    def on_test_epoch_end(self):
+
+        R = self.test_data[0].shape[1]  # Nombre de répétitions        
+        test_data_ensemble = [
+         [x[:, r] for x in self.test_data]
+         for r in range(R)
+        ]
+
+        test_data_rec = []
+        for test_data_r in test_data_ensemble:
+            rec_da = self.trainer.test_dataloaders.dataset.reconstruct(
+                test_data_r, self.rec_weight.cpu().numpy()
+            )
+
+            if isinstance(rec_da, list):
+                rec_da = rec_da[0]
+
+            test_data_r = rec_da.assign_coords(
+                dict(v0=self.test_quantities)
+            ).to_dataset(dim='v0')
+
+            test_data_rec.append(test_data_r)
+
+        base = test_data_rec[0][["inp", "tgt"]]
+        outs = [
+            ds["out"].rename(f"out{i+1}")
+            for i, ds in enumerate(test_data_rec)
+        ]
+        self.test_data = xr.merge([base] + outs)
+
+        metric_data = self.test_data.pipe(self.pre_metric_fn)
+        metrics = pd.Series({
+            metric_n: metric_fn(metric_data) 
+            for metric_n, metric_fn in self.metrics.items()
+        })
+
+        print(metrics.to_frame(name="Metrics").to_markdown())
+        if self.logger:
+            self.test_data.to_netcdf(Path(self.logger.log_dir) / 'test_data.nc')
+            print(Path(self.trainer.log_dir) / 'test_data.nc')
+            self.logger.log_metrics(metrics.to_dict())
+
+
+
+
+
+
+
+
+
+class Lit4dVarNet_FM_anomaly(LitUnet_like_4dVarNet):
+
+    def __init__(self,config_path,ckpt_path, solver, rec_weight, opt_fn, test_metrics=None, pre_metric_fn=None, norm_stats=None, persist_rw=True,use_fm_learning=False):
+        # Call the parent class's initializer
+        super().__init__(solver, rec_weight, opt_fn, test_metrics, pre_metric_fn, norm_stats, persist_rw)
+        self.use_fm_learning = use_fm_learning
+        self.config_path = config_path
+        self.ckpt_path = ckpt_path
+        self.solver_pretrained = self.load_from_cfg(self.config_path, key="model")
+        ckpt = torch.load(self.ckpt_path, weights_only=True)
+        self.solver_pretrained.load_state_dict(ckpt["state_dict"])
+
+
+    def base_step(self, batch, phase):
+        out = self(batch=batch, phase=phase)
+        loss = self.weighted_mse(out - batch.tgt, self.rec_weight)
+        return loss, out
+
+    def load_from_cfg(self, cfg_path, key):
+        """
+        Load configurations from a specified file and instantiate the
+        desired node.
+        """
+        cfg = OmegaConf.load(Path(cfg_path))
+        node = OmegaConf.select(cfg, key)
+        return hydra.utils.call(node)
+
+
+    def forward(self, batch, phase='train'):
+        """
+        Forward pass through the solver.
+
+        Args:
+            batch (dict): Input batch.
+
+        Returns:
+            torch.Tensor: Solver output.
+        """
+        return self.solver(batch, phase=phase, solver_pretrained=self.solver_pretrained, use_fm_learning=self.use_fm_learning)
+
+
+    def test_step(self, batch, batch_idx):
+        if batch_idx == 0:
+            self.test_data = []
+
+
+        m, s = self.norm_stats
+        n_repeat = 200  # ou valeur fixe
+
+
+        batch_outputs = []
+
+
+        for r in range(n_repeat):
+            out = self(batch=batch)
+
+
+            batch_input = (batch.input.cpu() * s + m).permute(0, 2, 3, 1)
+            batch_tgt = (batch.tgt.cpu() * s + m).permute(0, 2, 3, 1)
+            out_data = (out.squeeze(dim=-1).detach().cpu() * s + m).permute(0, 2, 3, 1)
+
+
+            batch_outputs.append(torch.stack(
+                [batch_input, batch_tgt, out_data],
+                dim=1  # (B, 3, H, W, C)
+            ))
+
+
+        # 👉 stack sur la dimension répétition
+        batch_outputs = torch.stack(batch_outputs, dim=1)
+        # shape: (B, R, 3, H, W, C)
+
+
+        self.test_data.append(batch_outputs)
+
+
+    
+    def on_test_epoch_end(self):
+
+
+        R = self.test_data[0].shape[1]  # Nombre de répétitions       
+        test_data_ensemble = [
+            [x[:, r] for x in self.test_data]
+            for r in range(R)
+        ]
+
+
+        test_data_rec = []
+        for test_data_r in test_data_ensemble:
+            rec_da = self.trainer.test_dataloaders.dataset.reconstruct(
+                test_data_r, self.rec_weight.cpu().numpy()
+            )
+
+
+            if isinstance(rec_da, list):
+                rec_da = rec_da[0]
+
+
+            test_data_r = rec_da.assign_coords(
+                dict(v0=self.test_quantities)
+            ).to_dataset(dim='v0')
+
+
+            test_data_rec.append(test_data_r)
+
+
+        base = test_data_rec[0][["inp", "tgt"]]
+        outs = [
+            ds["out"].rename(f"out{i+1}")
+            for i, ds in enumerate(test_data_rec)
+        ]
+        self.test_data = xr.merge([base] + outs)
+
+
+        metric_data = self.test_data.pipe(self.pre_metric_fn)
+        metrics = pd.Series({
+            metric_n: metric_fn(metric_data)
+            for metric_n, metric_fn in self.metrics.items()
+        })
+
+
+        print(metrics.to_frame(name="Metrics").to_markdown())
+        if self.logger:
+            self.test_data.to_netcdf(Path(self.logger.log_dir) / 'test_data.nc')
+            print(Path(self.trainer.log_dir) / 'test_data.nc')
+            self.logger.log_metrics(metrics.to_dict())
 
 

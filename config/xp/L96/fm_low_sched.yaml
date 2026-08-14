@@ -1,26 +1,19 @@
 # @package _global_
-
-
 xpname: l96-unet15M-aeunet_96_3-obs
 #xpname: glo12-sla-4th-unet15M-unrolling-5iter-v2bis-obs+state-ossev2-noiseg+u03
-
 ckpt: null
-
 paths:
     l96_dir: /Odyssey/public/l96_dataset/
     l96_trajectories: 
-      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_1.nc
-      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_2.nc
-      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_3.nc
-      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_4.nc
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_1_10_of_40.nc
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_2_10_of_40.nc
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_3_10_of_40.nc
+      - ${paths.l96_dir}/L96_truth_obs_mask_boc2010_single_traj_4_10_of_40.nc
     src: /Odyssey/private/p25denai/4dvarnet-ronan_dev
-
 hydra:
   run:
     dir: ${paths.src}/results/${now:%Y-%m-%d}/${now:%H:%M:%S}
-
 xp_name: ${last:${hydra:runtime.choices.xp}}
-
 trainer:
   _target_: pytorch_lightning.Trainer
   inference_mode: False
@@ -48,7 +41,6 @@ trainer:
       max_depth: 2
   check_val_every_n_epoch: 3
   accumulate_grad_batches: 1
-
 datamodule:
   _target_: contrib.L96.data.MultiTrajDataModule
   input_das: 
@@ -70,10 +62,12 @@ datamodule:
     aug_factor: 2
     aug_only: True
     noise_sigma: 0.03
-
 model:
-  _target_: contrib.L96.models.LitUnet_like_4dVarNet
-  persist_rw: False
+  _target_: contrib.L96.models.LitUnet_like_4dVarNet_FM
+  #config_path: ${paths.src}/results/2026-04-01/19:56:02/.hydra/config.yaml
+  #ckpt_path: ${paths.src}/results/2026-04-01/19:56:02/L96/unet-unrolling-grad/checkpoints/best.ckpt
+  #persist_rw: False
+  use_fm_learning: True 
   opt_fn:
     _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
     _partial_: true
@@ -85,43 +79,31 @@ model:
       crop: {time: 0, lat: 0, lon: 0}
       offset: 0
   solver:
-    _target_: contrib.4dvarnet_latent.models.GradSolver_withStep 
-    n_step: 5 #2 #5 #10
+    _target_: contrib.4dvarnet_latent.models.GradSolver_FM
+    n_step: 1 #2 #5 #10
+    n_step_inference: 5
     lr_grad: 0. #1e3
-    std_init: 0.1
+    std_init: 1 #0.5
     input_grad_update: 'grad' #'obs+state' ##'grad-only' #'grad+state' #'obs-only'  # 'grad+previous'  #'gobs+sgprior' #'grad+state'  #'grad-only' #'grad+state'  #'grad+state' #    
-    prior_cost:
-      _target_: contrib.4dvarnet_latent.models.GenericAEPriorCost
-      model_ae:
-        _target_: contrib.4dvarnet_latent.unet.UNetModel
-        dims: 2
-        in_channels: 1 #15 #${datamodule.xrds_kw.train.patch_dims.time}
-        out_channels: 1 #${datamodule.xrds_kw.train.patch_dims.time}
-        model_channels: 32 #64 #32
-        num_res_blocks: 1
-        channel_mult: [1,2,3]
-        attention_resolutions: []
-        use_checkpoint: true
-        dropout: 0.1
-        bias: false #true #
-    obs_cost:
-      _target_: ocean4dvarnet.models.BaseObsCost
-    grad_mod:
-      _target_: contrib.4dvarnet_latent.models.GradModelWithCondition
-      #use_grad_norm: true
-      grad_model: 
+    prior_cost: none 
+    back_cost: none
+    obs_cost: none
+    grad_mod: none
+    schedule_t_obs: True
+    unet: 
         _target_: contrib.4dvarnet_latent.unet.UNetModel2
         dims: 2
-        in_channels: 1 #45 #${datamodule.xrds_kw.train.patch_dims.time}
+        in_channels: 3 #45 #${datamodule.xrds_kw.train.patch_dims.time}
         out_channels: 1 #15 #${datamodule.xrds_kw.train.patch_dims.time}
-        model_channels: 32 #96 #64 #32
+        model_channels: 8 #96 #64 #32
         num_res_blocks: 1 #3 #2
-        channel_mult: [1,2,3]
+        channel_mult: [1,2]
         attention_resolutions: []
         use_checkpoint: true
-        dropout: 0.1
+        dropout: 0.2
         bias: false #true #
         interp_mode: 'bilinear' #'nearest' # 
+
 
        
   test_metrics: ${metrics.test_metrics}
@@ -131,16 +113,15 @@ model:
         time: {_target_: builtins.slice, _args_: [1000, 10000]}
         lat: ${domain.test.lat}
         lon: ${domain.test.lon}
-
-
 metrics:
-  nrmse_scores: {_target_: contrib.L96.utils.rmse_based_scores, _partial_: True}
+  nrmse_scores: {_target_: contrib.L96.utils.rmse_ensemble_based_scores, _partial_: True}
+  ncrps_scores: {_target_: contrib.L96.utils.crps_based_scores, _partial_: True}
   get0: {_target_: operator.itemgetter, _args_: [0]}
   get1: {_target_: operator.itemgetter, _args_: [1]}
   get2: {_target_: operator.itemgetter, _args_: [2]}
   test_metrics:
     'rmse': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.nrmse_scores}', '${metrics.get0}']}
-
+    'crps': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.ncrps_scores}', '${metrics.get0}']}
 entrypoints:
   - _target_: pytorch_lightning.seed_everything
     seed: 333
@@ -148,7 +129,6 @@ entrypoints:
     trainer: ${trainer}
     lit_mod: ${model}
     dm: ${datamodule}
-
 defaults:
   - /domain: l96_sim_40
-  - _self_
+

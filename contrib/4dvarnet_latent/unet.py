@@ -105,14 +105,7 @@ def normalization(channels):
     :param channels: number of input channels.
     :return: an nn.Module for normalization.
     """
-    # On ne peut pas avoir plus de groupes que de channels
-    num_groups = min(32, channels)
-
-    # On cherche le plus grand nombre de groupes qui divise channels
-    while channels % num_groups != 0:
-        num_groups -= 1
-
-    return GroupNorm32(num_groups, channels)
+    return GroupNorm32(8, channels)
 
 
 def timestep_embedding(timesteps, dim, max_period=10000):
@@ -147,8 +140,7 @@ def checkpoint(func, inputs, params, flag):
     """
     if flag:
         # Use pytorch's activation checkpointing.  This has support for fp16 autocast
-        return torch.utils.checkpoint.checkpoint(func, *inputs,use_reentrant=False)
-        # args = tuple(inputs) + tuple(params)
+        return torch.utils.checkpoint.checkpoint(func, *inputs, use_reentrant=False)
         # return CheckpointFunction.apply(func, len(inputs), *args)
     else:
         return func(*inputs)
@@ -983,6 +975,8 @@ class UNetModel(nn.Module):
         :param y: an [N] Tensor of labels, if class-conditional.
         :return: an [N x C x ...] Tensor of outputs.
         """
+
+
         if self.with_fourier_features:
             z_f = base2_fourier_features(x, start=6, stop=8, step=1)
             x = torch.cat([x, z_f], dim=1)
@@ -1042,6 +1036,10 @@ class UNetModel(nn.Module):
         #    out = out.view(out.shape[0], out.shape[2], out.shape[3], out.shape[4] ) # add channel dim if missing
 
         return out
+
+
+
+
 
 # Based on https://github.com/google-research/vdm/blob/main/model_vdm.py
 def base2_fourier_features(
@@ -1319,6 +1317,7 @@ class UNetModel2(nn.Module):
         :return: an [N x C x ...] Tensor of outputs.
         """
 
+
         if extra is None:
             extra = []
 
@@ -1361,6 +1360,99 @@ class UNetModel2(nn.Module):
         h = h.type(x.dtype)
         result = self.out(h)
         return result
+
+
+
+    # def predict(self, x, timesteps, extra=None):
+    #     if extra is None:  
+    #         extra = {}  # Corrigé en dictionnaire pour éviter les erreurs avec extra["label"]
+
+    #     if self.with_fourier_features:  
+    #         z_f = base2_fourier_features(x, start=6, stop=8, step=1)  
+    #         x = torch.cat([x, z_f], dim=1)  
+
+    #     hs = []  
+
+    #     emb = self.time_embed(timestep_embedding(timesteps, self.model_channels).to(x))  
+
+    #     if self.ignore_time:  
+    #         emb = emb * 0.0  
+
+    #     if self.num_classes and "label" not in extra:  
+    #         extra["label"] = torch.full(  
+    #             (x.size(0),), self.num_classes, dtype=torch.long, device=x.device  
+    #         )  
+
+    #     if self.num_classes is not None and "label" in extra:  
+    #         y = extra["label"]  
+    #         assert (  
+    #             y.shape == x.shape[:1]  
+    #         ), f"Labels have shape {y.shape}, which does not match the batch dimension of the input {x.shape}"  
+    #         emb = emb + self.label_emb(y)  
+
+    #     h = x  
+    #     if "concat_conditioning" in extra:  
+    #         h = torch.cat([x, extra["concat_conditioning"]], dim=1)  
+
+    #     for module in self.input_blocks:  
+    #         h = module(h, emb)  
+    #         hs.append(h)  
+            
+    #     h = self.middle_block(h, emb)  
+        
+    #     for module in self.output_blocks:  
+    #         h = torch.cat([h, hs.pop()], dim=1)  
+    #         h = module(h, emb)  
+            
+    #     h = h.type(x.dtype)  
+    #     result = self.out(h)  
+
+    #     # ======================================================================
+    #     # --- TEST DE TRAINABILITÉ (OPTION 2 : GRADIENTS) ---
+    #     # ======================================================================
+    #     print("\n" + "="*50)
+    #     print("[DEBUG TRAINABILITÉ] Vérification de self.out...")
+        
+    #     # On cible la convolution qui est emballée dans le nn.Sequential de self.out
+    #     conv_layer = self.out[2]
+        
+    #     print(f" -> Poids à zéro ? : {torch.all(conv_layer.weight == 0).item()}")
+    #     print(f" -> conv_layer.weight.requires_grad : {conv_layer.weight.requires_grad}")
+    #     print(f" -> result.requires_grad : {result.requires_grad}")
+        
+    #     if conv_layer.weight.requires_grad and result.requires_grad:
+    #         # 1. On crée une fausse loss (ex: somme de toutes les activations de sortie)
+    #         # On utilise .sum() pour que le gradient par rapport à la sortie soit de 1
+    #         fake_loss = result.sum()
+            
+    #         # 2. On nettoie les gradients existants s'il y en a
+    #         if conv_layer.weight.grad is not None:
+    #             conv_layer.weight.grad.zero_()
+                
+    #         # 3. On déclenche le backward local
+    #         # retain_graph=True permet de ne pas détruire le graphe si tu as besoin de réutiliser result après
+    #         fake_loss.backward(retain_graph=True)
+            
+    #         # 4. On vérifie si un gradient est descendu jusqu'à la convolution
+    #         if conv_layer.weight.grad is not None:
+    #             grad_mean = conv_layer.weight.grad.abs().mean().item()
+    #             grad_max = conv_layer.weight.grad.abs().max().item()
+    #             print(f" ✅ SUCCÈS : La couche reçoit du gradient !")
+    #             print(f"    -> Moyenne absolue du grad : {grad_mean:.6f}")
+    #             print(f"    -> Max absolu du grad      : {grad_max:.6f}")
+                
+    #             # Très important : On nettoie le gradient de test pour ne pas polluer la vraie étape d'optimisation
+    #             conv_layer.weight.grad.zero_()
+    #         else:
+    #             print(" ❌ ATTENTION : Le gradient est None. Les poids ne se mettront pas à jour.")
+    #     else:
+    #         print(" ❌ ATTENTION : Graphe de calcul rompu ou requires_grad=False.")
+    #     print("="*50 + "\n")
+    #     # ======================================================================
+
+    #     return result
+
+
 
     def forward(self, batch, timesteps=None, extra=None):
         x = batch.input

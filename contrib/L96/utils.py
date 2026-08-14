@@ -161,3 +161,99 @@ def rmse_based_scores(ds):
         np.round(std.values, 5).item(),
         np.round(rmse_missing.values, 5).item(),
     )
+
+
+
+
+
+
+def rmse_ensemble_based_scores(ds):
+
+    # 👉 récupérer toutes les variables "out*"
+    out_vars = [v for v in ds.data_vars if v.startswith("out")]
+
+    if len(out_vars) == 0:
+        raise ValueError("Aucune variable 'out' trouvée dans le dataset")
+
+    # 👉 moyenne des out
+    da_rec = xr.concat([ds[v] for v in out_vars], dim="member").mean(dim="member")
+
+    da_ref = ds["tgt"]
+    da_input = ds["inp"]
+
+    # Nombre de timestamps
+    n_time = da_rec.sizes["time"]
+    k = int(0.05 * n_time)
+
+    # Trim des 5% début et fin
+    if k > 0:
+        da_rec = da_rec.isel(time=slice(k, -k))
+        da_ref = da_ref.isel(time=slice(k, -k))
+        da_input = da_input.isel(time=slice(k, -k))
+
+    # RMSE globale
+    rmse = np.sqrt(((da_rec - da_ref) ** 2).mean())
+
+    # RMSE normalisée par timestep
+    rmse_t = (
+        np.sqrt(((da_rec - da_ref) ** 2).mean(dim=("lon", "lat")))
+        / np.sqrt((da_ref ** 2).mean(dim=("lon", "lat")))
+    )
+
+    std = rmse_t.std()
+
+    # masque pixels manquants
+    mask_missing = da_input.isnull()
+
+    # RMSE uniquement sur pixels manquants
+    rmse_missing = np.sqrt(((da_rec - da_ref) ** 2).where(mask_missing).mean())
+
+    return (
+        np.round(rmse.values, 5).item(),
+        np.round(std.values, 5).item(),
+        np.round(rmse_missing.values, 5).item(),
+    )
+
+
+
+
+
+def crps_based_scores(ds):
+
+    out_vars = sorted([v for v in ds.data_vars if v.startswith("out")])
+    da_ens = xr.concat([ds[v] for v in out_vars], dim="member")
+
+    da_ref = ds["tgt"]
+    da_input = ds["inp"]
+
+    # trim
+    n_time = da_ref.sizes["time"]
+    k = int(0.05 * n_time)
+
+    if k > 0:
+        da_ens = da_ens.isel(time=slice(k, -k))
+        da_ref = da_ref.isel(time=slice(k, -k))
+        da_input = da_input.isel(time=slice(k, -k))
+
+    # =========================
+    # CRPS STABLE VERSION
+    # =========================
+
+    # term 1: ensemble vs truth
+    term1 = np.abs(da_ens - da_ref).mean("member")
+
+    # term 2: ensemble spread (NO expand_dims)
+    ens_mean = da_ens.mean("member")
+    term2 = np.abs(da_ens - ens_mean).mean("member")
+
+    crps = term1 - 0.5 * term2
+
+    crps_mean = crps.mean()
+
+    mask_missing = da_input.isnull()
+    crps_missing = crps.where(mask_missing).mean()
+
+    return (
+        np.round(crps_mean.values, 5).item(),
+        np.round(crps_missing.values, 5).item(),
+    )

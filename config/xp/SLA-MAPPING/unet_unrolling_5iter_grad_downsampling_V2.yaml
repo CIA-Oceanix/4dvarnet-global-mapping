@@ -1,0 +1,110 @@
+# @package _global_
+xpname: glo12-sla-4th-unet15M-unrolling-aeunet_64_2_96_3-randinit-5iter-grad-ds4-ossev2-noiseg+u03
+
+ckpt: null
+config_path: null
+
+
+
+trainer:
+  check_val_every_n_epoch: 3
+  max_epochs: 1000
+  limit_train_batches: 100 #250
+  accumulate_grad_batches: 1 #8
+  callbacks:
+    - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+      monitor: val_loss #val_mse
+      save_last: true
+      save_top_k: 3
+      filename: '{val_loss:.5f}-{epoch:03d}'
+
+
+datamodule:  
+  _target_: contrib.glorys12.DistinctNormDataModulewInputTracks
+  input_da:
+    _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
+    tgt_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_gridded_from_alongtrack.nc
+    inp_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_gridded_from_alongtrack.nc
+    inp_var: obs
+    tgt_var: tgt
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-31']}
+    test: null
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, lat: 256, lon: 256}
+      strides: {time: 1, lat: 196, lon: 154}
+      domain_limits: ${domain.train}
+      noise: 0.03
+      noise_type: gaussian+uniform
+    val:
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 136, lon: 488}
+      domain_limits: ${domain.train}
+      noise: .03
+      noise_type: gaussian+uniform
+  dl_kw: {batch_size: 4, num_workers: 4}
+
+model:
+  _target_:  contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN #Lit4dVarNetIgnoreNaN_MergeTimeSteps # #_FM_E2E
+  w_mse: 50.
+  w_grad_mse: 1000.
+  w_prior: 1. #1.
+  w_mse_lr: 0.
+  w_grad_mse_lr: 0
+  osse_with_interp_error: false #true
+  solver:
+    _target_: contrib.downsampling.GradSolver_withStep_Downsampling
+    downsamp: 4
+    n_step: 5
+    lr_grad: 0.
+    std_init: 0.1
+    input_grad_update: 'grad'
+    prior_cost:
+      _target_: contrib.4dvarnet_latent.models.GenericAEPriorCost
+      model_ae:
+        _target_: contrib.4dvarnet_latent.unet.UNetModel
+        dims: 2
+        in_channels: 15
+        out_channels: 15
+        model_channels: 64
+        num_res_blocks: 2
+        channel_mult: [1,2,4]
+        attention_resolutions: []
+        use_checkpoint: true
+        dropout: 0.1
+        bias: false
+    obs_cost:
+      _target_: contrib.downsampling.BaseObsCostWithUpsampling_
+    grad_mod:
+      _target_: contrib.4dvarnet_latent.models.GradModelWithCondition
+      grad_model: 
+        _target_: contrib.4dvarnet_latent.unet.UNetModel2
+        dims: 2
+        in_channels: 15
+        out_channels: 15
+        model_channels: 96
+        num_res_blocks: 3
+        channel_mult: [1,2,4]
+        attention_resolutions: []
+        use_checkpoint: true
+        dropout: 0.1
+        bias: false
+        interp_mode: 'bilinear'
+
+entrypoints:
+  - _target_: pytorch_lightning.seed_everything
+    seed: 333
+  - _target_: contrib.glorys12.train
+    trainer: ${trainer}
+    lit_mod: ${model}
+    dm: ${datamodule}
+    ckpt: ${ckpt}
+
+defaults:
+  - SLA-MAPPING/glo12-sla-4th-unet
+  - _self_

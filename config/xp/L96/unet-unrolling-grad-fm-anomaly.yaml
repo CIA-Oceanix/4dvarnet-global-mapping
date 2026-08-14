@@ -72,8 +72,11 @@ datamodule:
     noise_sigma: 0.03
 
 model:
-  _target_: contrib.L96.models.LitUnet_like_4dVarNet
-  persist_rw: False
+  _target_: contrib.L96.models.Lit4dVarNet_FM_anomaly
+  config_path: ${paths.src}/results/2026-06-26/13:27:21/.hydra/config.yaml
+  ckpt_path: ${paths.src}/results/2026-06-26/13:27:21/L96/unet-unrolling-grad/checkpoints/best.ckpt
+  #persist_rw: False
+  use_fm_learning: True 
   opt_fn:
     _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
     _partial_: true
@@ -85,8 +88,9 @@ model:
       crop: {time: 0, lat: 0, lon: 0}
       offset: 0
   solver:
-    _target_: contrib.4dvarnet_latent.models.GradSolver_withStep 
+    _target_: contrib.4dvarnet_latent.models.GradSolver_FM_anomaly
     n_step: 5 #2 #5 #10
+    n_step_inference: 5
     lr_grad: 0. #1e3
     std_init: 0.1
     input_grad_update: 'grad' #'obs+state' ##'grad-only' #'grad+state' #'obs-only'  # 'grad+previous'  #'gobs+sgprior' #'grad+state'  #'grad-only' #'grad+state'  #'grad+state' #    
@@ -99,11 +103,13 @@ model:
         out_channels: 1 #${datamodule.xrds_kw.train.patch_dims.time}
         model_channels: 32 #64 #32
         num_res_blocks: 1
-        channel_mult: [1,2,3]
+        channel_mult: [1,2]
         attention_resolutions: []
         use_checkpoint: true
         dropout: 0.1
         bias: false #true #
+    back_cost:
+      _target_: contrib.4dvarnet_latent.models.BackgroundCost
     obs_cost:
       _target_: ocean4dvarnet.models.BaseObsCost
     grad_mod:
@@ -116,7 +122,7 @@ model:
         out_channels: 1 #15 #${datamodule.xrds_kw.train.patch_dims.time}
         model_channels: 32 #96 #64 #32
         num_res_blocks: 1 #3 #2
-        channel_mult: [1,2,3]
+        channel_mult: [1,2]
         attention_resolutions: []
         use_checkpoint: true
         dropout: 0.1
@@ -134,12 +140,14 @@ model:
 
 
 metrics:
-  nrmse_scores: {_target_: contrib.L96.utils.rmse_based_scores, _partial_: True}
+  nrmse_scores: {_target_: contrib.L96.utils.rmse_ensemble_based_scores, _partial_: True}
+  ncrps_scores: {_target_: contrib.L96.utils.crps_based_scores, _partial_: True}
   get0: {_target_: operator.itemgetter, _args_: [0]}
   get1: {_target_: operator.itemgetter, _args_: [1]}
   get2: {_target_: operator.itemgetter, _args_: [2]}
   test_metrics:
     'rmse': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.nrmse_scores}', '${metrics.get0}']}
+    'crps': {_target_: ocean4dvarnet.utils.pipe, _partial_: true, fns: ['${metrics.ncrps_scores}', '${metrics.get0}']}
 
 entrypoints:
   - _target_: pytorch_lightning.seed_everything
