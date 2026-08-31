@@ -1,0 +1,123 @@
+# @package _global_
+
+xpname: glo12-sla-4th-graph-global-sla
+ckpt: null
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  inference_mode: false
+  deterministic: true
+  gradient_clip_val: 0.5
+  accelerator: gpu
+  devices: 1 #1
+  #strategy: ddp #fsdp
+  precision: bf16-mixed #just to tryto save memory 
+  logger:
+    _target_: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+    save_dir: ${hydra:runtime.output_dir}
+    name: ${xpname}
+    version: ''
+  max_epochs: 2000
+  limit_train_batches: 100
+  #limit_val_batches: 100
+  callbacks:
+  - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+  - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+    monitor: val_loss
+    save_last: true
+    save_top_k: 3
+    filename: '{val_loss:.5f}-{epoch:03d}'
+  check_val_every_n_epoch: 5
+  accumulate_grad_batches: 2
+
+datamodule:
+  _target_: contrib.glorys12.DistinctNormDataModulewInputTracks
+  input_da:
+    _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
+    tgt_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc
+    inp_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc
+    inp_var: sla
+    tgt_var: sla
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-31']}
+    test: null
+  xrds_kw:
+    train:
+      patch_dims: {time: 15, lat: 680, lon: 1440} # {time: 15, lat: 128, lon: 128}
+      strides: {time: 1, lat: 680, lon: 1440} #{time: 1, lat: 98, lon: 77} no effect (except for time stride) because we are using the whole domain
+      domain_limits: ${domain.train}
+      noise: 0.03
+      noise_type: gaussian+uniform
+    val:
+      patch_dims:  {time: 15, lat: 680, lon: 1440} #{time: 15, lat: 256, lon: 256}
+      strides:  {time: 1, lat: 680, lon: 1440} # {time: 1, lat: 66, lon: 244} no effect (except for time time stride) because we are using the whole domain
+      domain_limits: ${domain.train}
+      noise: 0.03
+      noise_type: gaussian+uniform
+  dl_kw: {batch_size: 1, num_workers: 15}
+  norm_stats:
+    train:
+    - -0.001930378327255099
+    - 0.08604745118775728
+    val:
+    - 0.01560162689028551
+    - 0.08583080433051968
+
+model:
+  _target_: contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN
+  w_mse: 50.
+  w_grad_mse: 1000.
+  w_prior: 1.
+  persist_rw: false
+  no_prior: true
+  opt_fn:
+    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
+    _partial_: true
+    lr: 0.0001
+    T_max: ${trainer.max_epochs}
+  rec_weight:
+    _target_: ocean4dvarnet.utils.get_triang_time_wei
+    patch_dims: ${datamodule.xrds_kw.train.patch_dims}
+    crop: {time: 0, lat: 0, lon: 0} #chose 0 because of global domain.  crop: {time: 0, lat: 4, lon: 4} 
+  val_rec_weight:
+    _target_: ocean4dvarnet.utils.get_triang_time_wei
+    patch_dims: ${datamodule.xrds_kw.val.patch_dims}
+    crop: {time: 0, lat: 0, lon: 0} #chose 0 because of global domain.  crop: {time: 0, lat: 4, lon: 4}
+  norm_stats: ${datamodule.norm_stats}
+  w_mse_lr: 0.
+  w_grad_mse_lr: 0.
+  osse_with_interp_error: false
+  solver:
+    _target_: contrib.graphcast.model.GraphCastSLASolver
+    # SLA-specific departure from forecasting GraphCast: the 15 time steps are
+    # channels reconstructed jointly in one non-autoregressive smoothing pass.
+    in_channels: 15
+    out_channels: 15
+    mesh_refinement: 6
+    latent_size: 128 #nb of params scales quadratically with latent_size. for an order of magnitude 128 gives 2.2M params and consumes 85GB of VRAM
+    processor_layers: 16
+    hidden_layers: 1
+    radius_query_fraction_edge_length: 0.6
+    aggregate: sum
+    use_input_mask: true
+    use_latlon_features: true
+    predict_residual: true
+    mesh2grid_candidate_faces: 8
+    dropout: 0.0
+    layer_norm: true
+
+entrypoints:
+  - _target_: pytorch_lightning.seed_everything
+    seed: 333
+  - _target_: contrib.glorys12.train
+    trainer: ${trainer}
+    lit_mod: ${model}
+    dm: ${datamodule}
+    ckpt: ${ckpt}
+
+defaults:
+  - /domain: glorys
+  - _self_

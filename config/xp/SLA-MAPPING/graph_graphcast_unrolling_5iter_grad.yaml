@@ -1,0 +1,156 @@
+# @package _global_
+
+xpname: glo12-sla-4th-graph-global-sla-unrolling-5iter-grad
+ckpt: null
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  inference_mode: false
+  deterministic: true
+  gradient_clip_val: 0.5
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  logger:
+    _target_: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+    save_dir: ${hydra:runtime.output_dir}
+    name: ${xpname}
+    version: ''
+  max_epochs: 2000
+  limit_train_batches: 100
+  limit_val_batches: 100
+  callbacks:
+    - _target_: pytorch_lightning.callbacks.LearningRateMonitor
+    - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+      monitor: val_loss
+      save_last: true
+      save_top_k: 3
+      filename: '{val_loss:.5f}-{epoch:03d}'
+  check_val_every_n_epoch: 5
+  accumulate_grad_batches: 1
+
+datamodule:
+  _target_: contrib.glorys12.DistinctNormDataModulewInputTracks
+  input_da:
+    _target_: contrib.glorys12.load_glorys12_data_on_fly_inp
+    tgt_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_target_gridded_alongtrack.nc
+    inp_path: /Odyssey/public/glorys/reanalysis/glorys12_2010_2019_daily_sla_4th_input_gridded_alongtrack.nc
+    inp_var: sla
+    tgt_var: sla
+  domains:
+    train:
+      time: {_target_: builtins.slice, _args_: ['2010-01-01', '2017-12-31']}
+    val:
+      time: {_target_: builtins.slice, _args_: ['2018-01-01', '2018-12-31']}
+    test: null
+  xrds_kw:
+    train:
+      # patch_dims: {time: 15, lat: 256, lon: 256}
+      # strides: {time: 1, lat: 196, lon: 154}
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 136, lon: 488}
+      domain_limits: ${domain.train}
+      noise: 0.03
+      noise_type: gaussian+uniform
+    val:
+      patch_dims: {time: 15, lat: 512, lon: 512}
+      strides: {time: 1, lat: 136, lon: 488}
+      domain_limits: ${domain.train}
+      noise: 0.03
+      noise_type: gaussian+uniform
+  dl_kw: {batch_size: 1, num_workers: 15}
+  norm_stats:
+    train:
+      - -0.001930378327255099
+      - 0.08604745118775728
+    val:
+      - 0.01560162689028551
+      - 0.08583080433051968
+
+model:
+  _target_: contrib.4dvarnet_latent.models.Lit4dVarNetIgnoreNaN
+  w_mse: 50.
+  w_grad_mse: 1000.
+  w_prior: 1.
+  persist_rw: false
+  no_prior: false
+  opt_fn:
+    _target_: contrib.4dvarnet_latent.models.cosanneal_lr_adam_base
+    _partial_: true
+    lr: 0.0001
+    T_max: ${trainer.max_epochs}
+  rec_weight:
+    _target_: ocean4dvarnet.utils.get_triang_time_wei
+    patch_dims: ${datamodule.xrds_kw.train.patch_dims}
+    crop: {time: 0, lat: 4, lon: 4}
+  val_rec_weight:
+    _target_: ocean4dvarnet.utils.get_triang_time_wei
+    patch_dims: ${datamodule.xrds_kw.val.patch_dims}
+    crop: {time: 0, lat: 4, lon: 4}
+  norm_stats: ${datamodule.norm_stats}
+  w_mse_lr: 0.
+  w_grad_mse_lr: 0.
+  osse_with_interp_error: false
+  solver:
+    _target_: contrib.graphcast.unrolling.GraphGlobalUnrollingSolver
+    n_step: 5
+    std_init: 0.1
+    lbd: 1.
+    lr_grad: 0.
+    input_grad_update: grad
+    prior_cost:
+      _target_: contrib.4dvarnet_latent.models.GenericAEPriorCost
+      model_ae:
+        _target_: contrib.4dvarnet_latent.unet.UNetModel
+        dims: 2
+        in_channels: 15
+        out_channels: 15
+        model_channels: 64 # 64
+        num_res_blocks: 2
+        channel_mult: [1, 2, 4]
+        attention_resolutions: []
+        use_checkpoint: true
+        dropout: 0.1
+        bias: false
+    obs_cost:
+      _target_: ocean4dvarnet.models.BaseObsCost
+    grad_mod:
+      _target_: contrib.graphcast.unrolling.GraphGlobalGradModelWithCondition
+      dropout: 0.
+      use_grad_norm: true
+      eps: 1.0e-8
+      grad_model:
+        _target_: contrib.graphcast.unrolling.TimeConditionedGraphCastUpdate
+        num_frequencies: 8
+        time_feature_channels: 16
+        checkpoint_update: true
+        zero_initialize: true
+        graph_model:
+          _target_: contrib.graphcast.model.GraphCastSLASolver
+          in_channels: 31
+          out_channels: 15
+          mesh_refinement: 6 # 6
+          latent_size: 256 # 64
+          processor_layers: 16
+          hidden_layers: 1
+          radius_query_fraction_edge_length: 0.6
+          aggregate: sum
+          use_input_mask: false
+          use_latlon_features: true
+          predict_residual: false
+          mesh2grid_candidate_faces: 8
+          dropout: 0.0
+          layer_norm: true
+
+entrypoints:
+  - _target_: pytorch_lightning.seed_everything
+    seed: 333
+  - _target_: contrib.glorys12.train
+    trainer: ${trainer}
+    lit_mod: ${model}
+    dm: ${datamodule}
+    ckpt: ${ckpt}
+
+defaults:
+  - /domain: glorys
+  - _self_
