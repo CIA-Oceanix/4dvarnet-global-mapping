@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - /xp/SLA-MAPPING/sla_8th_unet_6h_to_daily
+  - _self_
+
+xpname: sla-8th-unet-6h-to-daily-60m
+
+model:
+  solver:
+    model_channels: 115
